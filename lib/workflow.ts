@@ -17,7 +17,7 @@ import {
   TaskStatus
 } from './types';
 import { getDb, saveDb, countWords, getDbAsync, saveDbAsync } from './db';
-import { updateProductionWithLock } from './pg';
+import { updateProductionWithLock, insertProductionWithLock, deleteProductionWithLock, insertAuditLogWithLock, insertNotificationWithLock } from './pg';
 import { dispatchWorkflowEmail } from './email';
 
 // RBAC helper utilities
@@ -72,7 +72,6 @@ export async function logAudit(
   action: string,
   details: string
 ): Promise<void> {
-  const db = await getDbAsync();
   const log: AuditLog = {
     id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     productionId,
@@ -82,8 +81,7 @@ export async function logAudit(
     details,
     timestamp: new Date().toISOString(),
   };
-  db.auditLogs.unshift(log);
-  await saveDbAsync(db);
+  await insertAuditLogWithLock(log);
 }
 
 export async function createNotification(
@@ -94,7 +92,6 @@ export async function createNotification(
   eventType?: 'STAGE_HANDOFF' | 'TASK_ASSIGNED' | 'REVISION_REQUESTED' | 'APPROVAL_REQUIRED' | 'DEADLINE_ALERT' | 'INFO',
   details?: Array<{ label: string; value: string }>
 ): Promise<void> {
-  const db = await getDbAsync();
   const notif: InAppNotification = {
     id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     userId,
@@ -104,8 +101,7 @@ export async function createNotification(
     isRead: false,
     createdAt: new Date().toISOString(),
   };
-  db.notifications.unshift(notif);
-  await saveDbAsync(db);
+  await insertNotificationWithLock(notif);
 
   // Background asynchronous email dispatch
   const lower = title.toLowerCase();
@@ -194,8 +190,7 @@ export async function createNewEpisode(
     revisionCycles: [],
   };
 
-  db.productions.unshift(newProd);
-  await saveDbAsync(db);
+  await insertProductionWithLock(newProd);
 
   await logAudit(prodId, user, 'CREATE_EPISODE', `Created new episode: ${title}`);
   await createNotification(
@@ -291,8 +286,7 @@ export async function createNewPilot(
     revisionCycles: [],
   };
 
-  db.productions.unshift(newPilot);
-  await saveDbAsync(db);
+  await insertProductionWithLock(newPilot);
 
   await logAudit(prodId, user, 'CREATE_PILOT', `Created new pilot: ${data.title}`);
   await createNotification(
@@ -394,8 +388,7 @@ export async function createNewRental(
     revisionCycles: [],
   };
 
-  db.productions.unshift(newRental);
-  await saveDbAsync(db);
+  await insertProductionWithLock(newRental);
 
   await logAudit(prodId, user, 'CREATE_RENTAL', `Created new rental job for ${data.clientName}`);
   return newRental;
@@ -410,62 +403,61 @@ export async function updateTaskStatus(
   blockedHelper?: string
 ): Promise<ProductionTask> {
   const db = await getDbAsync();
-  let foundTask: ProductionTask | undefined;
-  let parentProd: Production | undefined;
-
-  for (const prod of db.productions) {
-    const t = prod.tasks.find((task) => task.id === taskId);
-    if (t) {
-      foundTask = t;
-      parentProd = prod;
-      break;
-    }
-  }
-
-  if (!foundTask || !parentProd) {
+  const parent = db.productions.find((p) => p.tasks.some((t) => t.id === taskId));
+  if (!parent) {
     throw new Error('Task not found.');
   }
 
-  // Permission check: Assigned user, Producer, or Admin
-  if (
-    user.role === 'TEAM_MEMBER' &&
-    foundTask.assignedUserId !== user.id &&
-    parentProd.producerId !== user.id
-  ) {
-    throw new Error('Unauthorized: You can only update tasks assigned to you.');
-  }
+  let resultingTask: ProductionTask | undefined;
 
-  // If marking BLOCKED, require explanation
-  if (newStatus === 'BLOCKED') {
-    if (!blockedReason || blockedReason.trim().length === 0) {
-      throw new Error('Mandatory requirement: Please specify what is blocking this task.');
+  await updateProductionWithLock(parent.id, async (prod) => {
+    const foundTask = prod.tasks.find((t) => t.id === taskId);
+    if (!foundTask) throw new Error('Task not found.');
+
+    // Permission check: Assigned user, Producer, or Admin
+    if (
+      user.role === 'TEAM_MEMBER' &&
+      foundTask.assignedUserId !== user.id &&
+      prod.producerId !== user.id
+    ) {
+      throw new Error('Unauthorized: You can only update tasks assigned to you.');
     }
-    foundTask.blockedReason = blockedReason.trim();
-    foundTask.blockedHelper = blockedHelper?.trim();
-  } else {
-    // Clear blocked metadata if transitioning away from BLOCKED
-    foundTask.blockedReason = undefined;
-    foundTask.blockedHelper = undefined;
-  }
 
-  foundTask.status = newStatus;
-  foundTask.updatedAt = new Date().toISOString();
-  if (newStatus === 'COMPLETED') {
-    foundTask.completedAt = new Date().toISOString();
-  }
+    if (newStatus === 'BLOCKED') {
+      if (!blockedReason || blockedReason.trim().length === 0) {
+        throw new Error('Mandatory requirement: Please specify what is blocking this task.');
+      }
+      foundTask.blockedReason = blockedReason.trim();
+      foundTask.blockedHelper = blockedHelper?.trim();
+    } else {
+      foundTask.blockedReason = undefined;
+      foundTask.blockedHelper = undefined;
+    }
 
-  await saveDbAsync(db);
+    foundTask.status = newStatus;
+    foundTask.updatedAt = new Date().toISOString();
+    if (newStatus === 'COMPLETED') {
+      foundTask.completedAt = new Date().toISOString();
+    }
+
+    resultingTask = { ...foundTask };
+    return prod;
+  });
+
+  if (!resultingTask) {
+    throw new Error('Task update failed.');
+  }
 
   if (newStatus === 'BLOCKED') {
     await createNotification(
-      parentProd.producerId,
-      `⚠️ Task Blocked: ${foundTask.title}`,
-      `${user.name} reported that "${foundTask.title}" is BLOCKED. Reason: "${blockedReason}". Please review and assist.`,
-      `/productions/${parentProd.id}`,
+      parent.producerId,
+      `⚠️ Task Blocked: ${resultingTask.title}`,
+      `${user.name} reported that "${resultingTask.title}" is BLOCKED. Reason: "${blockedReason}". Please review and assist.`,
+      `/productions/${parent.id}`,
       'INFO',
       [
-        { label: 'Production', value: parentProd.title },
-        { label: 'Blocked Task', value: foundTask.title },
+        { label: 'Production', value: parent.title },
+        { label: 'Blocked Task', value: resultingTask.title },
         { label: 'Reported By', value: user.name },
         { label: 'Blocking Reason', value: blockedReason || 'Unspecified' },
         { label: 'Assistance Needed', value: blockedHelper || 'General assistance' },
@@ -474,15 +466,15 @@ export async function updateTaskStatus(
   }
 
   await logAudit(
-    parentProd.id,
+    parent.id,
     user,
     `TASK_STATUS_${newStatus}`,
-    `Updated task "${foundTask.title}" to ${newStatus}${
+    `Updated task "${resultingTask.title}" to ${newStatus}${
       blockedReason ? ` (Reason: ${blockedReason})` : ''
     }`
   );
 
-  return foundTask;
+  return resultingTask;
 }
 
 // 5. STAGE 1 -> Complete Filming (Producer confirms)
@@ -490,47 +482,43 @@ export async function completeFilmingStage(
   productionId: string,
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
   if (user.role === 'TEAM_MEMBER') {
     throw new Error('Unauthorized: Filming completion must be confirmed by a Producer.');
   }
 
-  if (prod.currentStage !== 'FILMING') {
-    throw new Error(`Invalid stage transition: Production is currently at ${prod.currentStage}.`);
-  }
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'FILMING') {
+      throw new Error(`Invalid stage transition: Production is currently at ${prod.currentStage}.`);
+    }
 
-  // Complete filming task
-  const filmTask = prod.tasks.find((t) => t.stageName === 'FILMING');
-  if (filmTask) {
-    filmTask.status = 'COMPLETED';
-    filmTask.completedAt = new Date().toISOString();
-  }
+    const filmTask = prod.tasks.find((t) => t.stageName === 'FILMING');
+    if (filmTask) {
+      filmTask.status = 'COMPLETED';
+      filmTask.completedAt = new Date().toISOString();
+    }
 
-  // Advance stage to FILES_UPLOADED
-  prod.currentStage = 'FILES_UPLOADED';
-  prod.updatedAt = new Date().toISOString();
+    prod.currentStage = 'FILES_UPLOADED';
+    prod.updatedAt = new Date().toISOString();
 
-  // Create Files Uploaded task assigned to Studio Operator or Editor
-  const uploadTask: ProductionTask = {
-    id: `tsk_${Date.now()}_upload`,
-    productionId: prod.id,
-    stageName: 'FILES_UPLOADED',
-    title: 'Raw Footage & ISO Files Uploaded',
-    assignedUserId: prod.editorId || 'usr_david_studio',
-    status: 'IN_PROGRESS',
-    priority: prod.priority,
-    dueDate: prod.filmingDate || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  prod.tasks.push(uploadTask);
+    const uploadTask: ProductionTask = {
+      id: `tsk_${Date.now()}_upload`,
+      productionId: prod.id,
+      stageName: 'FILES_UPLOADED',
+      title: 'Raw Footage & ISO Files Uploaded',
+      assignedUserId: prod.editorId || 'usr_david_studio',
+      status: 'IN_PROGRESS',
+      priority: prod.priority,
+      dueDate: prod.filmingDate || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    prod.tasks.push(uploadTask);
 
-  await saveDbAsync(db);
-  await logAudit(prod.id, user, 'FILMING_COMPLETED', `Marked filming complete. Activated Stage 2: Files Uploaded.`);
-  return prod;
+    return prod;
+  });
+
+  await logAudit(updated.id, user, 'FILMING_COMPLETED', `Marked filming complete. Activated Stage 2: Files Uploaded.`);
+  return updated;
 }
 
 // 6. STAGE 2 -> Complete File Upload
@@ -545,72 +533,71 @@ export async function completeFileUploadStage(
   },
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'FILES_UPLOADED') {
+      throw new Error(`Invalid transition: Production is currently at ${prod.currentStage}.`);
+    }
 
-  if (prod.currentStage !== 'FILES_UPLOADED') {
-    throw new Error(`Invalid transition: Production is currently at ${prod.currentStage}.`);
-  }
+    prod.fileUploadRecord = {
+      id: `fur_${Date.now()}`,
+      productionId: prod.id,
+      dropboxPath: uploadDetails.dropboxPath,
+      serverPath: uploadDetails.serverPath,
+      editshareLocation: uploadDetails.editshareLocation,
+      url: uploadDetails.url,
+      notes: uploadDetails.notes,
+      uploadedById: user.id,
+      completedAt: new Date().toISOString(),
+    };
 
-  prod.fileUploadRecord = {
-    id: `fur_${Date.now()}`,
-    productionId: prod.id,
-    dropboxPath: uploadDetails.dropboxPath,
-    serverPath: uploadDetails.serverPath,
-    editshareLocation: uploadDetails.editshareLocation,
-    url: uploadDetails.url,
-    notes: uploadDetails.notes,
-    uploadedById: user.id,
-    completedAt: new Date().toISOString(),
-  };
+    const uploadTask = prod.tasks.find((t) => t.stageName === 'FILES_UPLOADED');
+    if (uploadTask) {
+      uploadTask.status = 'COMPLETED';
+      uploadTask.completedAt = new Date().toISOString();
+    }
 
-  const uploadTask = prod.tasks.find((t) => t.stageName === 'FILES_UPLOADED');
-  if (uploadTask) {
-    uploadTask.status = 'COMPLETED';
-    uploadTask.completedAt = new Date().toISOString();
-  }
+    // Advance stage to PRODUCER_PACKAGE
+    prod.currentStage = 'PRODUCER_PACKAGE';
+    prod.updatedAt = new Date().toISOString();
 
-  // Advance stage to PRODUCER_PACKAGE
-  prod.currentStage = 'PRODUCER_PACKAGE';
-  prod.updatedAt = new Date().toISOString();
+    // Create task for Producer
+    const packageTask: ProductionTask = {
+      id: `tsk_${Date.now()}_package`,
+      productionId: prod.id,
+      stageName: 'PRODUCER_PACKAGE',
+      title: 'Producer Notes + B-Roll Ready',
+      assignedUserId: prod.producerId,
+      status: 'IN_PROGRESS',
+      priority: prod.priority,
+      dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    prod.tasks.push(packageTask);
 
-  // Create task for Producer
-  const packageTask: ProductionTask = {
-    id: `tsk_${Date.now()}_package`,
-    productionId: prod.id,
-    stageName: 'PRODUCER_PACKAGE',
-    title: 'Producer Notes + B-Roll Ready',
-    assignedUserId: prod.producerId,
-    status: 'IN_PROGRESS',
-    priority: prod.priority,
-    dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  prod.tasks.push(packageTask);
+    return prod;
+  });
 
-  await saveDbAsync(db);
   await logAudit(
-    prod.id,
+    updated.id,
     user,
     'FILES_UPLOADED_COMPLETED',
     `Files uploaded to ${uploadDetails.dropboxPath || uploadDetails.editshareLocation || uploadDetails.url || 'server'}. Activated Stage 3: Producer Package.`
   );
   await createNotification(
-    prod.producerId,
+    updated.producerId,
     'Files Uploaded — Producer Package Needed',
-    `Raw footage uploaded for ${prod.title}. Please prepare notes and B-roll instructions for the editor.`,
-    `/productions/${prod.id}`,
+    `Raw footage uploaded for ${updated.title}. Please prepare notes and B-roll instructions for the editor.`,
+    `/productions/${updated.id}`,
     'STAGE_HANDOFF',
     [
-      { label: 'Production', value: prod.title },
+      { label: 'Production', value: updated.title },
       { label: 'Stage', value: 'Stage 3: Producer Package' },
       { label: 'Footage Location', value: uploadDetails.dropboxPath || uploadDetails.editshareLocation || uploadDetails.url || 'Server' },
       { label: 'Action Required', value: 'Complete assembly notes & B-roll instructions' },
     ]
   );
-  return prod;
+  return updated;
 }
 
 // 7. STAGE 3 -> Complete Producer Package
@@ -627,70 +614,70 @@ export async function completeProducerPackageStage(
   },
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
   if (user.role === 'TEAM_MEMBER') {
     throw new Error('Unauthorized: Only a Producer or Admin can complete the editing package.');
   }
 
-  if (prod.currentStage !== 'PRODUCER_PACKAGE') {
-    throw new Error(`Invalid transition: Production is currently at ${prod.currentStage}.`);
-  }
+  let assignedEditor = 'usr_ryan_editor';
 
-  prod.producerPackage = {
-    id: `pkg_${Date.now()}`,
-    productionId: prod.id,
-    editingNotes: pkgData.editingNotes,
-    scriptText: pkgData.scriptText,
-    brollInstructions: pkgData.brollInstructions,
-    graphicsInstructions: pkgData.graphicsInstructions,
-    brollLinks: pkgData.brollLinks || [],
-    referenceLinks: pkgData.referenceLinks || [],
-    additionalComments: pkgData.additionalComments,
-    completedAt: new Date().toISOString(),
-  };
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'PRODUCER_PACKAGE') {
+      throw new Error(`Invalid transition: Production is currently at ${prod.currentStage}.`);
+    }
 
-  const pkgTask = prod.tasks.find((t) => t.stageName === 'PRODUCER_PACKAGE');
-  if (pkgTask) {
-    pkgTask.status = 'COMPLETED';
-    pkgTask.completedAt = new Date().toISOString();
-  }
+    prod.producerPackage = {
+      id: `pkg_${Date.now()}`,
+      productionId: prod.id,
+      editingNotes: pkgData.editingNotes,
+      scriptText: pkgData.scriptText,
+      brollInstructions: pkgData.brollInstructions,
+      graphicsInstructions: pkgData.graphicsInstructions,
+      brollLinks: pkgData.brollLinks || [],
+      referenceLinks: pkgData.referenceLinks || [],
+      additionalComments: pkgData.additionalComments,
+      completedAt: new Date().toISOString(),
+    };
 
-  // Advance stage to EDITING (Draft 1)
-  prod.currentStage = 'EDITING';
-  prod.updatedAt = new Date().toISOString();
+    const pkgTask = prod.tasks.find((t) => t.stageName === 'PRODUCER_PACKAGE');
+    if (pkgTask) {
+      pkgTask.status = 'COMPLETED';
+      pkgTask.completedAt = new Date().toISOString();
+    }
 
-  const assignedEditor = prod.editorId || 'usr_ryan_editor';
+    prod.currentStage = 'EDITING';
+    prod.updatedAt = new Date().toISOString();
 
-  const editDraftTask: ProductionTask = {
-    id: `tsk_${Date.now()}_draft1`,
-    productionId: prod.id,
-    stageName: 'EDITING',
-    title: 'Edit Draft 1',
-    assignedUserId: assignedEditor,
-    status: 'IN_PROGRESS',
-    priority: prod.priority,
-    dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  prod.tasks.push(editDraftTask);
+    assignedEditor = prod.editorId || 'usr_ryan_editor';
 
-  const initialCycle: RevisionCycle = {
-    id: `rev_${prod.id}_1`,
-    productionId: prod.id,
-    draftNumber: 1,
-    status: 'IN_PROGRESS',
-    editorId: assignedEditor,
-    createdAt: new Date().toISOString(),
-  };
-  prod.revisionCycles.push(initialCycle);
+    const editDraftTask: ProductionTask = {
+      id: `tsk_${Date.now()}_draft1`,
+      productionId: prod.id,
+      stageName: 'EDITING',
+      title: 'Edit Draft 1',
+      assignedUserId: assignedEditor,
+      status: 'IN_PROGRESS',
+      priority: prod.priority,
+      dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    prod.tasks.push(editDraftTask);
 
-  await saveDbAsync(db);
+    const initialCycle: RevisionCycle = {
+      id: `rev_${prod.id}_1`,
+      productionId: prod.id,
+      draftNumber: 1,
+      status: 'IN_PROGRESS',
+      editorId: assignedEditor,
+      createdAt: new Date().toISOString(),
+    };
+    prod.revisionCycles.push(initialCycle);
+
+    return prod;
+  });
+
   await logAudit(
-    prod.id,
+    updated.id,
     user,
     'PRODUCER_PACKAGE_COMPLETED',
     `Producer notes and B-roll ready. Activated Stage 4: Edit Draft 1.`
@@ -698,18 +685,18 @@ export async function completeProducerPackageStage(
   await createNotification(
     assignedEditor,
     'New Editing Task — Package Ready',
-    `Producer notes and package are ready for ${prod.title}. You have been assigned Edit Draft 1.`,
-    `/productions/${prod.id}`,
+    `Producer notes and package are ready for ${updated.title}. You have been assigned Edit Draft 1.`,
+    `/productions/${updated.id}`,
     'STAGE_HANDOFF',
     [
-      { label: 'Production', value: prod.title },
+      { label: 'Production', value: updated.title },
       { label: 'Stage', value: 'Stage 4: Editing' },
       { label: 'Draft', value: 'Draft 1' },
-      { label: 'Editing Deadline', value: prod.editingDeadline || 'Standard turnaround' },
-      { label: 'Footage Location', value: prod.fileUploadRecord?.dropboxPath || prod.fileUploadRecord?.url || 'In production folder' },
+      { label: 'Editing Deadline', value: updated.editingDeadline || 'Standard turnaround' },
+      { label: 'Footage Location', value: updated.fileUploadRecord?.dropboxPath || updated.fileUploadRecord?.url || 'In production folder' },
     ]
   );
-  return prod;
+  return updated;
 }
 
 // 8. STAGE 4 -> Editor Submits Draft for Producer Review
@@ -719,79 +706,76 @@ export async function submitDraftForReview(
   editorNotes: string,
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
-  if (prod.currentStage !== 'EDITING') {
-    throw new Error(`Invalid stage: Cannot submit draft while at stage ${prod.currentStage}.`);
-  }
-
   if (!reviewLink || reviewLink.trim().length === 0) {
     throw new Error('A review link (Frame.io, YouTube, Dropbox, etc.) is required.');
   }
 
-  // Find active revision cycle
-  const currentCycle = prod.revisionCycles[prod.revisionCycles.length - 1];
-  if (!currentCycle) {
-    throw new Error('No active revision cycle found.');
-  }
+  let draftNum = 1;
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'EDITING') {
+      throw new Error(`Invalid stage: Cannot submit draft while at stage ${prod.currentStage}.`);
+    }
 
-  currentCycle.status = 'READY_FOR_REVIEW';
-  currentCycle.reviewLink = reviewLink.trim();
-  currentCycle.editorNotes = editorNotes?.trim();
-  currentCycle.submittedAt = new Date().toISOString();
+    const currentCycle = prod.revisionCycles[prod.revisionCycles.length - 1];
+    if (!currentCycle) {
+      throw new Error('No active revision cycle found.');
+    }
 
-  // Complete editing task
-  const editTask = prod.tasks.find(
-    (t) => t.stageName === 'EDITING' && t.status !== 'COMPLETED'
-  );
-  if (editTask) {
-    editTask.status = 'COMPLETED';
-    editTask.completedAt = new Date().toISOString();
-  }
+    currentCycle.status = 'READY_FOR_REVIEW';
+    currentCycle.reviewLink = reviewLink.trim();
+    currentCycle.editorNotes = editorNotes?.trim();
+    currentCycle.submittedAt = new Date().toISOString();
+    draftNum = currentCycle.draftNumber;
 
-  // Advance stage to PRODUCER_REVIEW
-  prod.currentStage = 'PRODUCER_REVIEW';
-  prod.updatedAt = new Date().toISOString();
+    const editTask = prod.tasks.find(
+      (t) => t.stageName === 'EDITING' && t.status !== 'COMPLETED'
+    );
+    if (editTask) {
+      editTask.status = 'COMPLETED';
+      editTask.completedAt = new Date().toISOString();
+    }
 
-  // Create review task for Producer
-  const reviewTask: ProductionTask = {
-    id: `tsk_${Date.now()}_review_d${currentCycle.draftNumber}`,
-    productionId: prod.id,
-    stageName: 'PRODUCER_REVIEW',
-    title: `Review Draft ${currentCycle.draftNumber}`,
-    assignedUserId: prod.producerId,
-    status: 'WAITING_FOR_REVIEW',
-    priority: prod.priority,
-    dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  prod.tasks.push(reviewTask);
+    prod.currentStage = 'PRODUCER_REVIEW';
+    prod.updatedAt = new Date().toISOString();
 
-  await saveDbAsync(db);
+    const reviewTask: ProductionTask = {
+      id: `tsk_${Date.now()}_review_d${currentCycle.draftNumber}`,
+      productionId: prod.id,
+      stageName: 'PRODUCER_REVIEW',
+      title: `Review Draft ${currentCycle.draftNumber}`,
+      assignedUserId: prod.producerId,
+      status: 'WAITING_FOR_REVIEW',
+      priority: prod.priority,
+      dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    prod.tasks.push(reviewTask);
+
+    return prod;
+  });
+
   await logAudit(
-    prod.id,
+    updated.id,
     user,
-    `SUBMITTED_DRAFT_${currentCycle.draftNumber}`,
-    `Editor submitted Draft ${currentCycle.draftNumber} for review (${reviewLink}).`
+    `SUBMITTED_DRAFT_${draftNum}`,
+    `Editor submitted Draft ${draftNum} for review (${reviewLink}).`
   );
   await createNotification(
-    prod.producerId,
-    `Draft ${currentCycle.draftNumber} Ready for Review`,
-    `${user.name} submitted Draft ${currentCycle.draftNumber} for ${prod.title}.`,
-    `/productions/${prod.id}`,
+    updated.producerId,
+    `Draft ${draftNum} Ready for Review`,
+    `${user.name} submitted Draft ${draftNum} for ${updated.title}.`,
+    `/productions/${updated.id}`,
     'APPROVAL_REQUIRED',
     [
-      { label: 'Production', value: prod.title },
+      { label: 'Production', value: updated.title },
       { label: 'Stage', value: 'Stage 5: Producer Review' },
-      { label: 'Submitted Draft', value: `Draft ${currentCycle.draftNumber}` },
+      { label: 'Submitted Draft', value: `Draft ${draftNum}` },
       { label: 'Review Link', value: reviewLink },
       { label: 'Editor Notes', value: editorNotes || 'None' },
     ]
   );
-  return prod;
+  return updated;
 }
 
 // 9. STAGE 4 -> Producer Reviews Draft (APPROVED vs REVISION_REQUIRED)
@@ -801,127 +785,130 @@ export async function reviewDraft(
   reviewNotes: string,
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
   if (!canUserPerform(user, 'APPROVE_DRAFT')) {
     throw new Error('Unauthorized: Only Producers or Administrators can review drafts.');
   }
 
-  if (prod.currentStage !== 'PRODUCER_REVIEW') {
-    throw new Error(`Invalid stage: Cannot review draft while at stage ${prod.currentStage}.`);
-  }
+  let currentDraftNum = 1;
+  let nextDraftNum = 2;
+  let assignedEditor = 'usr_ryan_editor';
 
-  const currentCycle = prod.revisionCycles[prod.revisionCycles.length - 1];
-  if (!currentCycle) throw new Error('No active revision cycle found.');
-
-  currentCycle.reviewerId = user.id;
-  currentCycle.decision = decision;
-  currentCycle.reviewNotes = reviewNotes;
-  currentCycle.reviewedAt = new Date().toISOString();
-
-  const reviewTask = prod.tasks.find(
-    (t) => t.stageName === 'PRODUCER_REVIEW' && t.status !== 'COMPLETED'
-  );
-  if (reviewTask) {
-    reviewTask.status = 'COMPLETED';
-    reviewTask.completedAt = new Date().toISOString();
-  }
-
-  if (decision === 'APPROVED') {
-    currentCycle.status = 'APPROVED';
-    // Advance to FINAL_APPROVAL
-    prod.currentStage = 'FINAL_APPROVAL';
-    prod.updatedAt = new Date().toISOString();
-
-    const finalAppTask: ProductionTask = {
-      id: `tsk_${Date.now()}_final_approval`,
-      productionId: prod.id,
-      stageName: 'FINAL_APPROVAL',
-      title: 'Final Producer Approval',
-      assignedUserId: prod.producerId,
-      status: 'WAITING',
-      priority: prod.priority,
-      dueDate: prod.publicationDeadline || new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    prod.tasks.push(finalAppTask);
-
-    await saveDbAsync(db);
-    await logAudit(
-      prod.id,
-      user,
-      'DRAFT_APPROVED',
-      `Producer approved Draft ${currentCycle.draftNumber}. Production awaiting Final Producer Approval.`
-    );
-    await createNotification(
-      prod.producerId,
-      'Final Approval Required',
-      `Draft ${currentCycle.draftNumber} approved for ${prod.title}. Please provide final producer approval.`,
-      `/productions/${prod.id}`
-    );
-  } else {
-    // REVISION REQUIRED: must provide notes
-    if (!reviewNotes || reviewNotes.trim().length === 0) {
-      throw new Error('Revision notes are required when requesting revisions.');
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'PRODUCER_REVIEW') {
+      throw new Error(`Invalid stage: Cannot review draft while at stage ${prod.currentStage}.`);
     }
 
-    currentCycle.status = 'REVISION_REQUIRED';
-    prod.currentStage = 'EDITING';
-    prod.updatedAt = new Date().toISOString();
+    const currentCycle = prod.revisionCycles[prod.revisionCycles.length - 1];
+    if (!currentCycle) throw new Error('No active revision cycle found.');
 
-    const nextDraftNumber = currentCycle.draftNumber + 1;
-    const assignedEditor = prod.editorId || currentCycle.editorId;
+    currentCycle.reviewerId = user.id;
+    currentCycle.decision = decision;
+    currentCycle.reviewNotes = reviewNotes;
+    currentCycle.reviewedAt = new Date().toISOString();
+    currentDraftNum = currentCycle.draftNumber;
 
-    const nextDraftTask: ProductionTask = {
-      id: `tsk_${Date.now()}_draft${nextDraftNumber}`,
-      productionId: prod.id,
-      stageName: 'EDITING',
-      title: `Edit Draft ${nextDraftNumber} (Revision)`,
-      assignedUserId: assignedEditor,
-      status: 'IN_PROGRESS',
-      priority: 'HIGH',
-      dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    prod.tasks.push(nextDraftTask);
+    const reviewTask = prod.tasks.find(
+      (t) => t.stageName === 'PRODUCER_REVIEW' && t.status !== 'COMPLETED'
+    );
+    if (reviewTask) {
+      reviewTask.status = 'COMPLETED';
+      reviewTask.completedAt = new Date().toISOString();
+    }
 
-    const nextCycle: RevisionCycle = {
-      id: `rev_${prod.id}_${nextDraftNumber}`,
-      productionId: prod.id,
-      draftNumber: nextDraftNumber,
-      status: 'IN_PROGRESS',
-      editorId: assignedEditor,
-      createdAt: new Date().toISOString(),
-    };
-    prod.revisionCycles.push(nextCycle);
+    if (decision === 'APPROVED') {
+      currentCycle.status = 'APPROVED';
+      prod.currentStage = 'FINAL_APPROVAL';
+      prod.updatedAt = new Date().toISOString();
 
-    await saveDbAsync(db);
+      const finalAppTask: ProductionTask = {
+        id: `tsk_${Date.now()}_final_approval`,
+        productionId: prod.id,
+        stageName: 'FINAL_APPROVAL',
+        title: 'Final Producer Approval',
+        assignedUserId: prod.producerId,
+        status: 'WAITING',
+        priority: prod.priority,
+        dueDate: prod.publicationDeadline || new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      prod.tasks.push(finalAppTask);
+    } else {
+      if (!reviewNotes || reviewNotes.trim().length === 0) {
+        throw new Error('Revision notes are required when requesting revisions.');
+      }
+
+      currentCycle.status = 'REVISION_REQUIRED';
+      prod.currentStage = 'EDITING';
+      prod.updatedAt = new Date().toISOString();
+
+      nextDraftNum = currentCycle.draftNumber + 1;
+      assignedEditor = prod.editorId || currentCycle.editorId || 'usr_ryan_editor';
+
+      const nextDraftTask: ProductionTask = {
+        id: `tsk_${Date.now()}_draft${nextDraftNum}`,
+        productionId: prod.id,
+        stageName: 'EDITING',
+        title: `Edit Draft ${nextDraftNum} (Revision)`,
+        assignedUserId: assignedEditor,
+        status: 'IN_PROGRESS',
+        priority: 'HIGH',
+        dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      prod.tasks.push(nextDraftTask);
+
+      const nextCycle: RevisionCycle = {
+        id: `rev_${prod.id}_${nextDraftNum}`,
+        productionId: prod.id,
+        draftNumber: nextDraftNum,
+        status: 'IN_PROGRESS',
+        editorId: assignedEditor,
+        createdAt: new Date().toISOString(),
+      };
+      prod.revisionCycles.push(nextCycle);
+    }
+
+    return prod;
+  });
+
+  if (decision === 'APPROVED') {
     await logAudit(
-      prod.id,
+      updated.id,
       user,
-      `REVISION_REQUESTED_DRAFT_${currentCycle.draftNumber}`,
-      `Producer requested revisions on Draft ${currentCycle.draftNumber}: ${reviewNotes}. Created Draft ${nextDraftNumber}.`
+      'DRAFT_APPROVED',
+      `Producer approved Draft ${currentDraftNum}. Production awaiting Final Producer Approval.`
+    );
+    await createNotification(
+      updated.producerId,
+      'Final Approval Required',
+      `Draft ${currentDraftNum} approved for ${updated.title}. Please provide final producer approval.`,
+      `/productions/${updated.id}`
+    );
+  } else {
+    await logAudit(
+      updated.id,
+      user,
+      `REVISION_REQUESTED_DRAFT_${currentDraftNum}`,
+      `Producer requested revisions on Draft ${currentDraftNum}: ${reviewNotes}. Created Draft ${nextDraftNum}.`
     );
     await createNotification(
       assignedEditor,
-      `Revision Requested (Draft ${nextDraftNumber})`,
-      `Producer requested revisions on ${prod.title}: "${reviewNotes}". Draft ${nextDraftNumber} is ready to edit.`,
-      `/productions/${prod.id}`,
+      `Revision Requested (Draft ${nextDraftNum})`,
+      `Producer requested revisions on ${updated.title}: "${reviewNotes}". Draft ${nextDraftNum} is ready to edit.`,
+      `/productions/${updated.id}`,
       'REVISION_REQUESTED',
       [
-        { label: 'Production', value: prod.title },
-        { label: 'Stage', value: `Stage 4: Edit Draft ${nextDraftNumber}` },
+        { label: 'Production', value: updated.title },
+        { label: 'Stage', value: `Stage 4: Edit Draft ${nextDraftNum}` },
         { label: 'Producer Notes', value: reviewNotes },
         { label: 'Priority', value: 'HIGH' },
       ]
     );
   }
 
-  return prod;
+  return updated;
 }
 
 // 10. STAGE 5 -> Final Producer Approval
@@ -929,47 +916,47 @@ export async function giveFinalApproval(
   productionId: string,
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
   if (!canUserPerform(user, 'FINAL_APPROVAL')) {
     throw new Error('Unauthorized: Only Producers or Administrators can give final approval.');
   }
 
-  if (prod.currentStage !== 'FINAL_APPROVAL') {
-    throw new Error(`Invalid stage: Cannot give final approval while at stage ${prod.currentStage}.`);
-  }
+  let assignedEditor = 'usr_ryan_editor';
 
-  const finalAppTask = prod.tasks.find((t) => t.stageName === 'FINAL_APPROVAL');
-  if (finalAppTask) {
-    finalAppTask.status = 'COMPLETED';
-    finalAppTask.completedAt = new Date().toISOString();
-  }
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'FINAL_APPROVAL') {
+      throw new Error(`Invalid stage: Cannot give final approval while at stage ${prod.currentStage}.`);
+    }
 
-  // Advance to FINAL_UPLOAD
-  prod.finalApprovedAt = new Date().toISOString();
-  prod.currentStage = 'FINAL_UPLOAD';
-  prod.updatedAt = new Date().toISOString();
+    const finalAppTask = prod.tasks.find((t) => t.stageName === 'FINAL_APPROVAL');
+    if (finalAppTask) {
+      finalAppTask.status = 'COMPLETED';
+      finalAppTask.completedAt = new Date().toISOString();
+    }
 
-  const assignedEditor = prod.editorId || 'usr_ryan_editor';
-  const uploadFinalTask: ProductionTask = {
-    id: `tsk_${Date.now()}_final_upload`,
-    productionId: prod.id,
-    stageName: 'FINAL_UPLOAD',
-    title: 'Upload Final Master File (YouTube & Dropbox)',
-    assignedUserId: assignedEditor,
-    status: 'IN_PROGRESS',
-    priority: 'HIGH',
-    dueDate: prod.publicationDeadline || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  prod.tasks.push(uploadFinalTask);
+    prod.finalApprovedAt = new Date().toISOString();
+    prod.currentStage = 'FINAL_UPLOAD';
+    prod.updatedAt = new Date().toISOString();
 
-  await saveDbAsync(db);
+    assignedEditor = prod.editorId || 'usr_ryan_editor';
+    const uploadFinalTask: ProductionTask = {
+      id: `tsk_${Date.now()}_final_upload`,
+      productionId: prod.id,
+      stageName: 'FINAL_UPLOAD',
+      title: 'Upload Final Master File (YouTube & Dropbox)',
+      assignedUserId: assignedEditor,
+      status: 'IN_PROGRESS',
+      priority: 'HIGH',
+      dueDate: prod.publicationDeadline || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    prod.tasks.push(uploadFinalTask);
+
+    return prod;
+  });
+
   await logAudit(
-    prod.id,
+    updated.id,
     user,
     'FINAL_APPROVAL_GIVEN',
     `Final producer approval confirmed by ${user.name}. Activated Stage 6: Final Upload.`
@@ -977,17 +964,17 @@ export async function giveFinalApproval(
   await createNotification(
     assignedEditor,
     'Final Upload Required',
-    `Final approval confirmed for ${prod.title}. Please render and upload final master files to YouTube & Dropbox.`,
-    `/productions/${prod.id}`,
+    `Final approval confirmed for ${updated.title}. Please render and upload final master files to YouTube & Dropbox.`,
+    `/productions/${updated.id}`,
     'STAGE_HANDOFF',
     [
-      { label: 'Production', value: prod.title },
+      { label: 'Production', value: updated.title },
       { label: 'Stage', value: 'Stage 7: Final Upload' },
       { label: 'Action Required', value: 'Upload master video and thumbnail' },
       { label: 'Approved By', value: user.name },
     ]
   );
-  return prod;
+  return updated;
 }
 
 // 11. STAGE 6 -> Final File Upload
@@ -1000,60 +987,58 @@ export async function completeFinalUpload(
   },
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
-  if (prod.currentStage !== 'FINAL_UPLOAD') {
-    throw new Error(`Invalid stage: Cannot complete final upload while at stage ${prod.currentStage}.`);
-  }
-
   if (!urls.youtubeUrl && !urls.dropboxUrl && !urls.otherDeliveryUrl) {
     throw new Error('At least one delivery URL (YouTube, Dropbox, or Other) is required.');
   }
 
-  prod.youtubeUrl = urls.youtubeUrl;
-  prod.dropboxUrl = urls.dropboxUrl;
-  prod.otherDeliveryUrl = urls.otherDeliveryUrl;
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'FINAL_UPLOAD') {
+      throw new Error(`Invalid stage: Cannot complete final upload while at stage ${prod.currentStage}.`);
+    }
 
-  const uploadTask = prod.tasks.find((t) => t.stageName === 'FINAL_UPLOAD');
-  if (uploadTask) {
-    uploadTask.status = 'COMPLETED';
-    uploadTask.completedAt = new Date().toISOString();
-  }
+    prod.youtubeUrl = urls.youtubeUrl;
+    prod.dropboxUrl = urls.dropboxUrl;
+    prod.otherDeliveryUrl = urls.otherDeliveryUrl;
 
-  // Advance to PUBLISHED confirmation stage
-  prod.currentStage = 'PUBLISHED';
-  prod.updatedAt = new Date().toISOString();
+    const uploadTask = prod.tasks.find((t) => t.stageName === 'FINAL_UPLOAD');
+    if (uploadTask) {
+      uploadTask.status = 'COMPLETED';
+      uploadTask.completedAt = new Date().toISOString();
+    }
 
-  const publishTask: ProductionTask = {
-    id: `tsk_${Date.now()}_publish_confirm`,
-    productionId: prod.id,
-    stageName: 'PUBLISHED',
-    title: 'Confirm Publication & Mark Episode Completed',
-    assignedUserId: prod.producerId,
-    status: 'IN_PROGRESS',
-    priority: 'HIGH',
-    dueDate: prod.publicationDeadline || new Date().toISOString().split('T')[0],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  prod.tasks.push(publishTask);
+    prod.currentStage = 'PUBLISHED';
+    prod.updatedAt = new Date().toISOString();
 
-  await saveDbAsync(db);
+    const publishTask: ProductionTask = {
+      id: `tsk_${Date.now()}_publish_confirm`,
+      productionId: prod.id,
+      stageName: 'PUBLISHED',
+      title: 'Confirm Publication & Mark Episode Completed',
+      assignedUserId: prod.producerId,
+      status: 'IN_PROGRESS',
+      priority: 'HIGH',
+      dueDate: prod.publicationDeadline || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    prod.tasks.push(publishTask);
+
+    return prod;
+  });
+
   await logAudit(
-    prod.id,
+    updated.id,
     user,
     'FINAL_UPLOAD_COMPLETED',
     `Final master files uploaded. YouTube: ${urls.youtubeUrl || 'N/A'}, Dropbox: ${urls.dropboxUrl || 'N/A'}.`
   );
   await createNotification(
-    prod.producerId,
+    updated.producerId,
     'Master Uploaded — Ready to Publish',
-    `Final master files uploaded for ${prod.title}. Please confirm publication.`,
-    `/productions/${prod.id}`
+    `Final master files uploaded for ${updated.title}. Please confirm publication.`,
+    `/productions/${updated.id}`
   );
-  return prod;
+  return updated;
 }
 
 // 12. STAGE 7 -> Confirm Publication (Completes production and moves to archive)
@@ -1065,38 +1050,37 @@ export async function markPublished(
   },
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod) throw new Error('Production not found.');
-
   if (!canUserPerform(user, 'MARK_PUBLISHED')) {
     throw new Error('Unauthorized: Only Producers or Administrators can mark an episode as Published.');
   }
 
-  if (prod.currentStage !== 'PUBLISHED') {
-    throw new Error('Cannot mark Published before Final Upload stage has been reached and completed.');
-  }
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.currentStage !== 'PUBLISHED') {
+      throw new Error('Cannot mark Published before Final Upload stage has been reached and completed.');
+    }
 
-  prod.status = 'COMPLETED';
-  prod.publishedAt = data.publicationDate || new Date().toISOString();
-  prod.publishedByUserId = user.id;
-  if (data.youtubeUrl) prod.youtubeUrl = data.youtubeUrl;
-  prod.updatedAt = new Date().toISOString();
+    prod.status = 'COMPLETED';
+    prod.publishedAt = data.publicationDate || new Date().toISOString();
+    prod.publishedByUserId = user.id;
+    if (data.youtubeUrl) prod.youtubeUrl = data.youtubeUrl;
+    prod.updatedAt = new Date().toISOString();
 
-  const pubTask = prod.tasks.find((t) => t.stageName === 'PUBLISHED');
-  if (pubTask) {
-    pubTask.status = 'COMPLETED';
-    pubTask.completedAt = new Date().toISOString();
-  }
+    const pubTask = prod.tasks.find((t) => t.stageName === 'PUBLISHED');
+    if (pubTask) {
+      pubTask.status = 'COMPLETED';
+      pubTask.completedAt = new Date().toISOString();
+    }
 
-  await saveDbAsync(db);
+    return prod;
+  });
+
   await logAudit(
-    prod.id,
+    updated.id,
     user,
     'EPISODE_PUBLISHED',
-    `Production published and marked COMPLETED. Published by ${user.name} on ${prod.publishedAt}.`
+    `Production published and marked COMPLETED. Published by ${user.name} on ${updated.publishedAt}.`
   );
-  return prod;
+  return updated;
 }
 
 // 13. Convert Pilot to Show (strictly only when pilot is COMPLETED)
@@ -1180,57 +1164,58 @@ export async function updateRentalStep(
   },
   user: User
 ): Promise<Production> {
-  const db = await getDbAsync();
-  const prod = db.productions.find((p) => p.id === productionId);
-  if (!prod || prod.type !== 'RENTAL' || !prod.rentalDetails) {
-    throw new Error('Studio Rental not found.');
-  }
+  const updated = await updateProductionWithLock(productionId, async (prod) => {
+    if (prod.type !== 'RENTAL' || !prod.rentalDetails) {
+      throw new Error('Studio Rental not found.');
+    }
 
-  switch (step) {
-    case 'RECORDING_DONE':
-      prod.currentStage = 'RECORDING_DONE';
-      break;
+    switch (step) {
+      case 'RECORDING_DONE':
+        prod.currentStage = 'RECORDING_DONE';
+        break;
 
-    case 'FILES_UPLOADED':
-      prod.currentStage = 'FILES_UPLOADED';
-      break;
+      case 'FILES_UPLOADED':
+        prod.currentStage = 'FILES_UPLOADED';
+        break;
 
-    case 'LINK_SENT_TO_CLIENT':
-      if (!payload.clientLink || payload.clientLink.trim().length === 0) {
-        throw new Error('A valid delivery URL or confirmation link is required for the client.');
-      }
-      prod.rentalDetails.clientLink = payload.clientLink.trim();
-      prod.currentStage = 'LINK_SENT_TO_CLIENT';
-      break;
+      case 'LINK_SENT_TO_CLIENT':
+        if (!payload.clientLink || payload.clientLink.trim().length === 0) {
+          throw new Error('A valid delivery URL or confirmation link is required for the client.');
+        }
+        prod.rentalDetails.clientLink = payload.clientLink.trim();
+        prod.currentStage = 'LINK_SENT_TO_CLIENT';
+        break;
 
-    case 'BILLING_SENT_TO_FINANCE':
-      if (!payload.financeBillingDetails || payload.financeBillingDetails.trim().length === 0) {
-        throw new Error('Billing/contact details for Finance are required.');
-      }
-      if (!payload.financeAgreedAmount || payload.financeAgreedAmount.trim().length === 0) {
-        throw new Error('Agreed billing amount is required for Finance.');
-      }
-      prod.rentalDetails.financeBillingDetails = payload.financeBillingDetails.trim();
-      prod.rentalDetails.financeAgreedAmount = payload.financeAgreedAmount.trim();
-      prod.rentalDetails.financeNotes = payload.financeNotes?.trim();
-      prod.rentalDetails.financeSentDate = payload.financeSentDate || new Date().toISOString().split('T')[0];
-      prod.currentStage = 'COMPLETED';
-      prod.status = 'COMPLETED';
-      break;
+      case 'BILLING_SENT_TO_FINANCE':
+        if (!payload.financeBillingDetails || payload.financeBillingDetails.trim().length === 0) {
+          throw new Error('Billing/contact details for Finance are required.');
+        }
+        if (!payload.financeAgreedAmount || payload.financeAgreedAmount.trim().length === 0) {
+          throw new Error('Agreed billing amount is required for Finance.');
+        }
+        prod.rentalDetails.financeBillingDetails = payload.financeBillingDetails.trim();
+        prod.rentalDetails.financeAgreedAmount = payload.financeAgreedAmount.trim();
+        prod.rentalDetails.financeNotes = payload.financeNotes?.trim();
+        prod.rentalDetails.financeSentDate = payload.financeSentDate || new Date().toISOString().split('T')[0];
+        prod.currentStage = 'COMPLETED';
+        prod.status = 'COMPLETED';
+        break;
 
-    default:
-      throw new Error('Invalid rental step.');
-  }
+      default:
+        throw new Error('Invalid rental step.');
+    }
 
-  prod.updatedAt = new Date().toISOString();
-  await saveDbAsync(db);
+    prod.updatedAt = new Date().toISOString();
+    return prod;
+  });
+
   await logAudit(
-    prod.id,
+    updated.id,
     user,
     `RENTAL_STEP_${step}`,
     `Studio rental updated to step ${step}. ${step === 'BILLING_SENT_TO_FINANCE' ? 'Rental COMPLETED.' : ''}`
   );
-  return prod;
+  return updated;
 }
 
 // 15. Create Improvement Suggestion (Author required, >= 100 substantive words)
@@ -1376,29 +1361,25 @@ export async function deleteProduction(
   }
 
   const db = await getDbAsync();
-  const prodIndex = db.productions.findIndex((p) => p.id === productionId);
-  if (prodIndex === -1) {
+  const prod = db.productions.find((p) => p.id === productionId);
+  if (!prod) {
     throw new Error('Production not found.');
   }
 
-  const prod = db.productions[prodIndex];
-  db.productions.splice(prodIndex, 1);
-
-  // Clean up comments related to this production
-  db.comments = db.comments.filter((c) => c.productionId !== productionId);
-
-  await saveDbAsync(db);
+  const prodTitle = prod.title;
+  const prodType = prod.type;
+  await deleteProductionWithLock(productionId);
 
   await logAudit(
     undefined,
     user,
     'DELETE_PRODUCTION',
-    `${user.name} (${user.role}) removed production task "${prod.title}" [${prod.type}] from the system.`
+    `${user.name} (${user.role}) removed production task "${prodTitle}" [${prodType}] from the system.`
   );
 
   return {
     success: true,
-    message: `Production "${prod.title}" removed successfully.`,
+    message: `Production "${prodTitle}" removed successfully.`,
     deletedId: productionId,
   };
 }
@@ -1408,46 +1389,51 @@ export async function deleteTask(
   user: User
 ): Promise<{ success: boolean; message: string; deletedTaskId: string; productionId: string }> {
   const db = await getDbAsync();
-  let foundTask: ProductionTask | undefined;
-  let parentProd: Production | undefined;
-
-  for (const prod of db.productions) {
-    const t = prod.tasks.find((task) => task.id === taskId);
-    if (t) {
-      foundTask = t;
-      parentProd = prod;
-      break;
-    }
-  }
-
-  if (!foundTask || !parentProd) {
+  const parent = db.productions.find((p) => p.tasks.some((t) => t.id === taskId));
+  if (!parent) {
     throw new Error('Task not found.');
   }
 
-  if (
-    user.role !== 'ADMIN' &&
-    user.role !== 'PRODUCER' &&
-    parentProd.producerId !== user.id &&
-    foundTask.assignedUserId !== user.id
-  ) {
-    throw new Error('Unauthorized: You do not have permission to remove this task.');
+  let foundTask: ProductionTask | undefined;
+
+  await updateProductionWithLock(parent.id, async (prod) => {
+    const tIndex = prod.tasks.findIndex((t) => t.id === taskId);
+    if (tIndex === -1) {
+      throw new Error('Task not found.');
+    }
+    const t = prod.tasks[tIndex];
+
+    if (
+      user.role !== 'ADMIN' &&
+      user.role !== 'PRODUCER' &&
+      prod.producerId !== user.id &&
+      t.assignedUserId !== user.id
+    ) {
+      throw new Error('Unauthorized: You do not have permission to remove this task.');
+    }
+
+    foundTask = t;
+    prod.tasks.splice(tIndex, 1);
+    prod.updatedAt = new Date().toISOString();
+    return prod;
+  });
+
+  if (!foundTask) {
+    throw new Error('Task deletion failed.');
   }
 
-  parentProd.tasks = parentProd.tasks.filter((t) => t.id !== taskId);
-  await saveDbAsync(db);
-
   await logAudit(
-    parentProd.id,
+    parent.id,
     user,
     'DELETE_TASK',
-    `${user.name} (${user.role}) removed task "${foundTask.title}" from production "${parentProd.title}".`
+    `${user.name} (${user.role}) removed task "${foundTask.title}" from production "${parent.title}".`
   );
 
   return {
     success: true,
     message: `Task "${foundTask.title}" removed successfully.`,
     deletedTaskId: taskId,
-    productionId: parentProd.id,
+    productionId: parent.id,
   };
 }
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert';
+import { NextRequest } from 'next/server';
 import {
   canUserPerform,
   createNewEpisode,
@@ -15,8 +16,17 @@ import {
   submitProblemReport,
   submitEquipmentRequest,
   updateTaskStatus,
+  deleteProduction,
+  deleteTask,
 } from '../lib/workflow';
-import { getDb, resetToSeedData, countWords } from '../lib/db';
+import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
+import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
+registerDbAccess({ getDbAsync, saveDbAsync });
+import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
+import { POST as postReset } from '../app/api/reset/route';
+import { GET as getTestWorkflow } from '../app/api/test-workflow/route';
+import { GET as getProductions } from '../app/api/productions/route';
+import { middleware } from '../middleware';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
 
@@ -388,13 +398,220 @@ try {
   console.error('✗ Test 12 Failed', err);
 }
 
+// Test 13: Unauthenticated API access protection
+try {
+  // 1. Unauthenticated request to /api/auth/me returns HTTP 401 and never leaks users or emails
+  const unauthMeReq = new NextRequest('http://localhost:3000/api/auth/me');
+  const meRes = await getAuthMe(unauthMeReq);
+  assert.strictEqual(meRes.status, 401, '/api/auth/me must return 401 for unauthenticated requests');
+  const meBody = await meRes.json();
+  assert(meBody.error, 'Response must contain an error message');
+  assert.strictEqual(meBody.user, undefined, 'Must not return user object');
+  assert.strictEqual(meBody.allUsers, undefined, 'Must not return allUsers array');
+  assert.strictEqual(meBody.users, undefined, 'Must not return users array');
+  assert(!JSON.stringify(meBody).includes('@jns.org'), 'Must never leak user email addresses');
+
+  // 2. Middleware blocks unauthenticated request to /api/auth/me
+  const mwRes = await middleware(unauthMeReq);
+  assert.strictEqual(mwRes.status, 401, 'Middleware must reject unauthenticated /api/auth/me with 401');
+
+  // 3. Unauthenticated request to protected API routes returns 401
+  const unauthProdReq = new NextRequest('http://localhost:3000/api/productions');
+  const prodRes = await getProductions(unauthProdReq);
+  assert.strictEqual(prodRes.status, 401, 'Protected route /api/productions must return 401 when unauthenticated');
+
+  console.log('✓ Test 13 Passed: Unauthenticated API access returns 401 with zero user/email leakage');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 13 Failed', err);
+}
+
+// Test 14: Server-side role enforcement
+try {
+  // 1. Team member cannot delete a production
+  let delProdThrew = false;
+  try {
+    await deleteProduction(createdEpisode.id, editorUser);
+  } catch (e) {
+    delProdThrew = true;
+    assert(e.message.includes('Unauthorized'), 'Error must specify unauthorized');
+  }
+  assert.strictEqual(delProdThrew, true, 'Team member cannot delete production');
+
+  // 2. Team member cannot give final producer approval
+  let finalAppThrew = false;
+  try {
+    await giveFinalApproval(createdEpisode.id, editorUser);
+  } catch (e) {
+    finalAppThrew = true;
+    assert(e.message.includes('Unauthorized'), 'Error must specify unauthorized');
+  }
+  assert.strictEqual(finalAppThrew, true, 'Team member cannot give final approval');
+
+  // 3. Team member cannot update task assigned to someone else
+  const prodTask = createdEpisode.tasks.find((t) => t.assignedUserId === producerUser.id);
+  assert(prodTask, 'Task assigned to producer must exist');
+  let updateOtherTaskThrew = false;
+  try {
+    await updateTaskStatus(prodTask.id, 'IN_PROGRESS', editorUser);
+  } catch (e) {
+    updateOtherTaskThrew = true;
+    assert(e.message.includes('Unauthorized'), 'Must reject updating tasks assigned to others');
+  }
+  assert.strictEqual(updateOtherTaskThrew, true, 'Team member cannot update task assigned to another user');
+
+  // 4. Team member cannot delete a task assigned to someone else
+  let deleteOtherTaskThrew = false;
+  try {
+    await deleteTask(prodTask.id, editorUser);
+  } catch (e) {
+    deleteOtherTaskThrew = true;
+    assert(e.message.includes('Unauthorized'), 'Must reject deleting tasks assigned to others');
+  }
+  assert.strictEqual(deleteOtherTaskThrew, true, 'Team member cannot delete task assigned to another user');
+
+  console.log('✓ Test 14 Passed: Server-side role permissions strictly enforced across all operations');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 14 Failed', err);
+}
+
+// Test 15: Production-only endpoints disabled unconditionally in production
+try {
+  const origEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+
+  try {
+    // 1. /api/reset returns 404 in production unconditionally (even with admin headers)
+    const resetReq = new NextRequest('http://localhost:3000/api/reset', {
+      method: 'POST',
+      headers: { 'x-admin-secret': 'super-admin-secret' },
+    });
+    const resetRes = await postReset(resetReq);
+    assert.strictEqual(resetRes.status, 404, '/api/reset must return 404 unconditionally in production');
+
+    // 2. /api/test-workflow returns 404 in production unconditionally
+    const testWfReq = new NextRequest('http://localhost:3000/api/test-workflow', {
+      method: 'GET',
+      headers: { 'x-admin-secret': 'super-admin-secret' },
+    });
+    const testWfRes = await getTestWorkflow(testWfReq);
+    assert.strictEqual(testWfRes.status, 404, '/api/test-workflow must return 404 unconditionally in production');
+  } finally {
+    process.env.NODE_ENV = origEnv;
+  }
+
+  console.log('✓ Test 15 Passed: /api/reset and /api/test-workflow unconditionally disabled (404) in production');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 15 Failed', err);
+}
+
+// Test 16: Simultaneous database updates (Transactional concurrency)
+try {
+  // Setup: Create two distinct productions with tasks
+  const simProdA = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '881',
+      filmingDate: '2026-09-20',
+      priority: 'HIGH',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+
+  const simProdB = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '882',
+      filmingDate: '2026-09-21',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+
+  // Add an extra task to simProdA so it has 2 tasks for same-production test
+  await updateProductionWithLock(simProdA.id, (prod) => {
+    prod.tasks.push({
+      id: `tsk_extra_${Date.now()}`,
+      productionId: prod.id,
+      stageName: 'FILMING',
+      title: 'Extra B-Roll Task',
+      assignedUserId: producerUser.id,
+      status: 'NOT_STARTED',
+      priority: 'NORMAL',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return prod;
+  });
+
+  // Part A: Simultaneous updates to DIFFERENT tasks on DIFFERENT productions
+  const taskA = simProdA.tasks[0];
+  const taskB = simProdB.tasks[0];
+
+  await Promise.all([
+    updateTaskStatus(taskA.id, 'IN_PROGRESS', producerUser),
+    updateTaskStatus(taskB.id, 'IN_PROGRESS', producerUser),
+  ]);
+
+  // Verify fresh database state: both tasks must be IN_PROGRESS
+  let freshDb = await getDbAsync();
+  let freshA = freshDb.productions.find((p) => p.id === simProdA.id);
+  let freshB = freshDb.productions.find((p) => p.id === simProdB.id);
+
+  let updatedTaskA = freshA?.tasks.find((t) => t.id === taskA.id);
+  let updatedTaskB = freshB?.tasks.find((t) => t.id === taskB.id);
+
+  assert.strictEqual(updatedTaskA?.status, 'IN_PROGRESS', 'Task A on Prod A must be IN_PROGRESS');
+  assert.strictEqual(updatedTaskB?.status, 'IN_PROGRESS', 'Task B on Prod B must be IN_PROGRESS');
+
+  // Part B: Simultaneous updates to DIFFERENT tasks on the SAME production
+  const taskA1 = freshA.tasks[0];
+  const taskA2 = freshA.tasks[1];
+  assert(taskA1 && taskA2, 'Production A must have at least 2 tasks');
+
+  await Promise.all([
+    updateTaskStatus(taskA1.id, 'COMPLETED', producerUser),
+    updateTaskStatus(taskA2.id, 'IN_PROGRESS', producerUser),
+  ]);
+
+  freshDb = await getDbAsync();
+  freshA = freshDb.productions.find((p) => p.id === simProdA.id);
+  const freshTaskA1 = freshA?.tasks.find((t) => t.id === taskA1.id);
+  const freshTaskA2 = freshA?.tasks.find((t) => t.id === taskA2.id);
+
+  assert.strictEqual(freshTaskA1?.status, 'COMPLETED', 'Task A1 must be COMPLETED');
+  assert.strictEqual(freshTaskA2?.status, 'IN_PROGRESS', 'Task A2 must be IN_PROGRESS');
+
+  // Part C: Multiple concurrent status updates on identical tasks
+  await Promise.all([
+    updateTaskStatus(taskA1.id, 'IN_PROGRESS', producerUser),
+    updateTaskStatus(taskA1.id, 'COMPLETED', producerUser),
+  ]);
+
+  freshDb = await getDbAsync();
+  freshA = freshDb.productions.find((p) => p.id === simProdA.id);
+  const finalTaskA1 = freshA?.tasks.find((t) => t.id === taskA1.id);
+  assert(['IN_PROGRESS', 'COMPLETED'].includes(finalTaskA1?.status), 'Final status must be valid and intact');
+
+  console.log('✓ Test 16 Passed: Simultaneous database updates complete transactionally without lost updates');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 16 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 12 Critical Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 16 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 12) {
+if (testsPassed !== 16) {
   process.exit(1);
 }

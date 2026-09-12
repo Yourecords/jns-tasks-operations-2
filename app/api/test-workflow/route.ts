@@ -23,15 +23,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
-    const user = await getAuthenticatedUser(req);
-    const adminSecret = req.headers.get('x-admin-secret');
-    const isAuthorized = (user && user.role === 'ADMIN') || (process.env.ADMIN_RESET_SECRET && adminSecret === process.env.ADMIN_RESET_SECRET);
-    if (!isAuthorized) {
-      return NextResponse.json(
-        { error: 'Forbidden: Test workflow endpoint is disabled in production.' },
-        { status: 403 }
-      );
-    }
+    return NextResponse.json(
+      { error: 'Not Found' },
+      { status: 404 }
+    );
   }
 
   const results: { test: string; passed: boolean; message?: string }[] = [];

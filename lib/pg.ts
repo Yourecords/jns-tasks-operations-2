@@ -229,16 +229,83 @@ export async function withTransaction<T>(
   }
 }
 
+// Serialized lock queue for memory-fallback mode (unit tests / local without DB)
+let memoryDbLock: Promise<any> = Promise.resolve();
+
+type DbAccess = {
+  getDbAsync: () => Promise<DatabaseSchema>;
+  saveDbAsync: (db: DatabaseSchema) => Promise<void>;
+};
+
+let registeredDbAccess: DbAccess | null = null;
+
+export function registerDbAccess(access: DbAccess) {
+  registeredDbAccess = access;
+}
+
+async function getFallbackDb(): Promise<DatabaseSchema> {
+  if (registeredDbAccess) {
+    return registeredDbAccess.getDbAsync();
+  }
+  if (globalThis.__jnsDbCache) {
+    return globalThis.__jnsDbCache;
+  }
+  return {
+    users: [],
+    shows: [],
+    productions: [],
+    comments: [],
+    auditLogs: [],
+    meetings: [],
+    improvements: [],
+    anonymousProblemReports: [],
+    showIdeas: [],
+    equipmentRequests: [],
+    systemSettings: {} as any,
+    notifications: [],
+    gearInventory: [],
+    gearCheckouts: [],
+  };
+}
+
+async function saveFallbackDb(data: DatabaseSchema): Promise<void> {
+  if (registeredDbAccess) {
+    return registeredDbAccess.saveDbAsync(data);
+  }
+  globalThis.__jnsDbCache = data;
+}
+
 /**
  * Row-Level Locking Helper:
- * Locks a specific production row with SELECT ... FOR UPDATE within a transaction,
+ * In PostgreSQL: Locks a specific production row with SELECT ... FOR UPDATE within a transaction,
  * applies a mutation function, and persists the row-level update safely.
  * Concurrent updates to the same production are serialized to prevent race conditions.
+ * In memory-fallback mode: Uses a serialized promise lock chain to guarantee atomicity.
  */
 export async function updateProductionWithLock(
   productionId: string,
   mutateFn: (prod: Production) => Production | Promise<Production>
 ): Promise<Production> {
+  const p = getPgPool();
+  if (!p) {
+    const current = memoryDbLock.then(async () => {
+      const db = await getFallbackDb();
+      const currentProd = db.productions.find((item) => item.id === productionId);
+      if (!currentProd) {
+        throw new Error(`Production not found: ${productionId}`);
+      }
+      const updated = await mutateFn(currentProd);
+      const idx = db.productions.findIndex((item) => item.id === productionId);
+      if (idx >= 0) {
+        db.productions[idx] = updated;
+      }
+      await saveFallbackDb(db);
+      return updated;
+    });
+    memoryDbLock = current.catch(() => {});
+    return await current;
+  }
+
   return withTransaction(async (client) => {
     const res = await client.query(
       'SELECT data FROM productions WHERE id = $1 FOR UPDATE',
@@ -253,7 +320,7 @@ export async function updateProductionWithLock(
       const stateRes = await client.query('SELECT state FROM jns_app_state WHERE key = $1 FOR UPDATE', ['current']);
       if (stateRes.rows.length > 0 && stateRes.rows[0].state) {
         const fullState = stateRes.rows[0].state as DatabaseSchema;
-        currentProd = fullState.productions.find((p) => p.id === productionId) || null;
+        currentProd = fullState.productions.find((prod) => prod.id === productionId) || null;
       }
     }
 
@@ -288,9 +355,157 @@ export async function updateProductionWithLock(
       ]
     );
 
+    if (globalThis.__jnsDbCache?.productions) {
+      const idx = globalThis.__jnsDbCache.productions.findIndex((prod) => prod.id === updated.id);
+      if (idx >= 0) {
+        globalThis.__jnsDbCache.productions[idx] = updated;
+      } else {
+        globalThis.__jnsDbCache.productions.unshift(updated);
+      }
+    }
+
     return updated;
   });
 }
+
+/**
+ * Inserts a new production row inside a PostgreSQL transaction or memory lock.
+ */
+export async function insertProductionWithLock(newProd: Production): Promise<Production> {
+  const p = getPgPool();
+  if (!p) {
+    const current = memoryDbLock.then(async () => {
+      const db = await getFallbackDb();
+      db.productions.unshift(newProd);
+      await saveFallbackDb(db);
+      return newProd;
+    });
+    memoryDbLock = current.catch(() => {});
+    return await current;
+  }
+
+  return withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO productions (id, show_id, episode_number, title, type, status, current_stage, data, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+      [
+        newProd.id,
+        newProd.showId || null,
+        newProd.episodeNumber || null,
+        newProd.title,
+        newProd.type,
+        newProd.status,
+        newProd.currentStage,
+        JSON.stringify(newProd),
+      ]
+    );
+    if (globalThis.__jnsDbCache?.productions) {
+      globalThis.__jnsDbCache.productions.unshift(newProd);
+    }
+    return newProd;
+  });
+}
+
+/**
+ * Deletes a production row inside a PostgreSQL transaction or memory lock.
+ */
+export async function deleteProductionWithLock(productionId: string): Promise<boolean> {
+  const p = getPgPool();
+  if (!p) {
+    const current = memoryDbLock.then(async () => {
+      const db = await getFallbackDb();
+      db.productions = db.productions.filter((prod) => prod.id !== productionId);
+      db.comments = db.comments.filter((c) => c.productionId !== productionId);
+      await saveFallbackDb(db);
+      return true;
+    });
+    memoryDbLock = current.catch(() => {});
+    return await current;
+  }
+
+  return withTransaction(async (client) => {
+    await client.query('DELETE FROM productions WHERE id = $1', [productionId]);
+    await client.query('DELETE FROM comments WHERE production_id = $1', [productionId]);
+    if (globalThis.__jnsDbCache?.productions) {
+      globalThis.__jnsDbCache.productions = globalThis.__jnsDbCache.productions.filter((prod) => prod.id !== productionId);
+    }
+    if (globalThis.__jnsDbCache?.comments) {
+      globalThis.__jnsDbCache.comments = globalThis.__jnsDbCache.comments.filter((c) => c.productionId !== productionId);
+    }
+    return true;
+  });
+}
+
+/**
+ * Inserts an audit log entry atomically without full-state rewrite.
+ */
+export async function insertAuditLogWithLock(log: AuditLog): Promise<AuditLog> {
+  const p = getPgPool();
+  if (!p) {
+    const current = memoryDbLock.then(async () => {
+      const db = await getFallbackDb();
+      db.auditLogs.unshift(log);
+      await saveFallbackDb(db);
+      return log;
+    });
+    memoryDbLock = current.catch(() => {});
+    return await current;
+  }
+
+  return withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO audit_logs (id, production_id, user_id, action, data, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        log.id,
+        log.productionId || null,
+        log.userId,
+        log.action,
+        JSON.stringify(log),
+        log.timestamp || new Date().toISOString(),
+      ]
+    );
+    if (globalThis.__jnsDbCache?.auditLogs) {
+      globalThis.__jnsDbCache.auditLogs.unshift(log);
+    }
+    return log;
+  });
+}
+
+/**
+ * Inserts an in-app notification atomically without full-state rewrite.
+ */
+export async function insertNotificationWithLock(notif: InAppNotification): Promise<InAppNotification> {
+  const p = getPgPool();
+  if (!p) {
+    const current = memoryDbLock.then(async () => {
+      const db = await getFallbackDb();
+      db.notifications.unshift(notif);
+      await saveFallbackDb(db);
+      return notif;
+    });
+    memoryDbLock = current.catch(() => {});
+    return await current;
+  }
+
+  return withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO notifications (id, user_id, data, created_at)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        notif.id,
+        notif.userId,
+        JSON.stringify(notif),
+        notif.createdAt || new Date().toISOString(),
+      ]
+    );
+    if (globalThis.__jnsDbCache?.notifications) {
+      globalThis.__jnsDbCache.notifications.unshift(notif);
+    }
+    return notif;
+  });
+}
+
 
 /**
  * Loads entire DatabaseSchema from PostgreSQL tables as the single source of truth.

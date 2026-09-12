@@ -3,12 +3,18 @@ import { getDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
-  const db = await getDbAsync();
   const currentUser = await getAuthenticatedUser(req);
+  if (!currentUser) {
+    return NextResponse.json(
+      { error: 'Unauthorized: Authentication required.' },
+      { status: 401 }
+    );
+  }
 
+  const db = await getDbAsync();
   return NextResponse.json({
     user: currentUser,
-    allUsers: currentUser?.role === 'ADMIN' ? db.users : db.users.filter((u) => u.isActive !== false),
+    allUsers: currentUser.role === 'ADMIN' ? db.users : db.users.filter((u) => u.isActive !== false),
   });
 }
 

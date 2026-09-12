@@ -1547,7 +1547,7 @@ export const SEED_GEAR_CHECKOUTS: GearCheckoutRecord[] = [
   },
 ];
 
-import { getPgPool, saveStateToPostgres, loadStateFromPostgres } from './pg';
+import { getPgPool, saveStateToPostgres, loadStateFromPostgres, registerDbAccess } from './pg';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -1730,4 +1730,8 @@ export function resetToSeedData(): DatabaseSchema {
   saveDb(freshData);
   return freshData;
 }
+
+// Register database access helpers with PostgreSQL module
+registerDbAccess({ getDbAsync, saveDbAsync });
+
 

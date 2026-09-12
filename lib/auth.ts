@@ -39,15 +39,15 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<User | nul
       }
     }
 
-    // In local non-production development without Google OAuth credentials, allow dev fallback
+    // In local non-production development without Google OAuth credentials, allow dev fallback ONLY if dev cookie is explicitly present
     if (process.env.NODE_ENV !== 'production') {
       const devCookie = req.cookies.get('jns_user_id')?.value;
-      const db = await getDbAsync();
       if (devCookie) {
+        const db = await getDbAsync();
         const found = db.users.find((u) => u.id === devCookie && u.isActive !== false);
         if (found) return found;
       }
-      return db.users.find((u) => u.role === 'ADMIN') || db.users[0] || null;
+      return null;
     }
 
     return null;
