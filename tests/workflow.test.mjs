@@ -39,7 +39,7 @@ try {
   assert.strictEqual(canUserPerform(editorUser, 'CREATE_EPISODE'), false);
   let threw = false;
   try {
-    createNewEpisode(
+    await createNewEpisode(
       {
         showId: 'show_the_quad',
         episodeNumber: '999',
@@ -63,7 +63,7 @@ try {
 let createdEpisode;
 try {
   assert.strictEqual(canUserPerform(producerUser, 'CREATE_EPISODE'), true);
-  createdEpisode = createNewEpisode(
+  createdEpisode = await createNewEpisode(
     {
       showId: 'show_the_quad',
       episodeNumber: '999',
@@ -95,7 +95,7 @@ try {
     }
   }
   assert(editorTask, 'Task assigned to editor should exist in database');
-  const updated = updateTaskStatus(editorTask.id, 'IN_PROGRESS', editorUser);
+  const updated = await updateTaskStatus(editorTask.id, 'IN_PROGRESS', editorUser);
   assert.strictEqual(updated.status, 'IN_PROGRESS');
   console.log('✓ Test 3 Passed: Editor can update assigned task to In Progress');
   testsPassed++;
@@ -108,7 +108,7 @@ try {
   assert.strictEqual(canUserPerform(editorUser, 'FINAL_APPROVAL'), false);
   let threw = false;
   try {
-    giveFinalApproval(createdEpisode.id, editorUser);
+    await giveFinalApproval(createdEpisode.id, editorUser);
   } catch (e) {
     threw = true;
   }
@@ -122,11 +122,11 @@ try {
 // Test 5 & 6: Revision cycle progression & Revision Required generates next revision
 try {
   // Filming -> File Upload
-  createdEpisode = completeFilmingStage(createdEpisode.id, producerUser);
+  createdEpisode = await completeFilmingStage(createdEpisode.id, producerUser);
   assert.strictEqual(createdEpisode.currentStage, 'FILES_UPLOADED');
 
   // File Upload -> Producer Package
-  createdEpisode = completeFileUploadStage(
+  createdEpisode = await completeFileUploadStage(
     createdEpisode.id,
     { dropboxPath: '/JNS_RAW/Test_999', notes: '4 ISOs uploaded' },
     editorUser
@@ -134,7 +134,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PRODUCER_PACKAGE');
 
   // Producer Package -> Edit Draft 1
-  createdEpisode = completeProducerPackageStage(
+  createdEpisode = await completeProducerPackageStage(
     createdEpisode.id,
     { editingNotes: 'Cut tight on opening debate', brollLinks: ['https://drive.google.com/broll'] },
     producerUser
@@ -144,7 +144,7 @@ try {
   assert.strictEqual(createdEpisode.revisionCycles[0].draftNumber, 1);
 
   // Editor submits Draft 1
-  createdEpisode = submitDraftForReview(
+  createdEpisode = await submitDraftForReview(
     createdEpisode.id,
     'https://frame.io/player/test-999-d1',
     'Draft 1 ready for review',
@@ -153,7 +153,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PRODUCER_REVIEW');
 
   // Producer requests revisions -> generates Draft 2
-  createdEpisode = reviewDraft(
+  createdEpisode = await reviewDraft(
     createdEpisode.id,
     'REVISION_REQUIRED',
     'Trim 15 seconds from intro and swap lower third graphic',
@@ -167,7 +167,7 @@ try {
   testsPassed++;
 
   // Editor submits Draft 2
-  createdEpisode = submitDraftForReview(
+  createdEpisode = await submitDraftForReview(
     createdEpisode.id,
     'https://frame.io/player/test-999-d2',
     'Draft 2 with trimmed intro',
@@ -176,7 +176,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PRODUCER_REVIEW');
 
   // Producer approves Draft 2
-  createdEpisode = reviewDraft(createdEpisode.id, 'APPROVED', 'Edit looks sharp. Approved.', producerUser);
+  createdEpisode = await reviewDraft(createdEpisode.id, 'APPROVED', 'Edit looks sharp. Approved.', producerUser);
   assert.strictEqual(createdEpisode.currentStage, 'FINAL_APPROVAL');
   console.log('✓ Test 6 Passed: Approved revision proceeds to Final Producer Approval');
   testsPassed++;
@@ -188,7 +188,7 @@ try {
 try {
   let threw = false;
   try {
-    completeFinalUpload(
+    await completeFinalUpload(
       createdEpisode.id,
       { youtubeUrl: 'https://youtube.com/test' },
       editorUser
@@ -206,20 +206,20 @@ try {
 // Test 8: Published cannot happen before Final Upload
 try {
   // Give final approval
-  createdEpisode = giveFinalApproval(createdEpisode.id, producerUser);
+  createdEpisode = await giveFinalApproval(createdEpisode.id, producerUser);
   assert.strictEqual(createdEpisode.currentStage, 'FINAL_UPLOAD');
 
   // Attempt to mark published before upload
   let threw = false;
   try {
-    markPublished(createdEpisode.id, { publicationDate: '2026-09-16' }, producerUser);
+    await markPublished(createdEpisode.id, { publicationDate: '2026-09-16' }, producerUser);
   } catch (e) {
     threw = true;
   }
   assert.strictEqual(threw, true, 'Published before final upload must fail');
 
   // Now complete final upload
-  createdEpisode = completeFinalUpload(
+  createdEpisode = await completeFinalUpload(
     createdEpisode.id,
     {
       youtubeUrl: 'https://youtube.com/watch?v=master_999',
@@ -230,7 +230,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PUBLISHED');
 
   // Now Producer marks Published
-  createdEpisode = markPublished(
+  createdEpisode = await markPublished(
     createdEpisode.id,
     { youtubeUrl: 'https://youtube.com/watch?v=master_999' },
     producerUser
@@ -250,7 +250,7 @@ try {
 
   let threw = false;
   try {
-    convertPilotToShow(
+    await convertPilotToShow(
       activePilot.id,
       {
         showName: 'Test Pilot Show',
@@ -284,7 +284,7 @@ try {
   const totalWords = countWords(`${longProblem} ${longImpact} ${longSolution}`);
   assert(totalWords >= 100, 'Must meet 100-word substantive threshold');
 
-  submitProblemReport(
+  await submitProblemReport(
     {
       title: 'Clipping on channel 3 telemetry during live switchovers',
       problemDescription: longProblem,
@@ -317,13 +317,13 @@ try {
   // Link sent to client requires valid link
   let threw = false;
   try {
-    updateRentalStep(rental.id, 'LINK_SENT_TO_CLIENT', { clientLink: '' }, producerUser);
+    await updateRentalStep(rental.id, 'LINK_SENT_TO_CLIENT', { clientLink: '' }, producerUser);
   } catch (e) {
     threw = true;
   }
   assert.strictEqual(threw, true, 'Empty client link must fail');
 
-  const rStep1 = updateRentalStep(
+  const rStep1 = await updateRentalStep(
     rental.id,
     'LINK_SENT_TO_CLIENT',
     { clientLink: 'https://dropbox.com/jns/rental_delivery' },
@@ -333,7 +333,7 @@ try {
   assert.notStrictEqual(rStep1.status, 'COMPLETED');
 
   // Billing details sent to finance completes rental
-  const rStep2 = updateRentalStep(
+  const rStep2 = await updateRentalStep(
     rental.id,
     'BILLING_SENT_TO_FINANCE',
     {
@@ -355,7 +355,7 @@ try {
   // Reject vague "Need a monitor" without URL
   let threw = false;
   try {
-    submitEquipmentRequest(
+    await submitEquipmentRequest(
       {
         itemName: 'Need a monitor',
         category: 'Monitor',
@@ -371,7 +371,7 @@ try {
   assert.strictEqual(threw, true, 'Vague equipment request must be rejected');
 
   // Accept specific product name or product URL
-  submitEquipmentRequest(
+  await submitEquipmentRequest(
     {
       itemName: 'Dell UltraSharp 32 4K USB-C Hub Monitor (U3223QE)',
       category: 'Monitor',

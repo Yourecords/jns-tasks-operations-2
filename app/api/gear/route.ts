@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { GearCheckoutRecord, GearItem, User } from '@/lib/types';
 import { logAudit, createNotification } from '@/lib/workflow';
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   return NextResponse.json({
     gearInventory: db.gearInventory || [],
     gearCheckouts: db.gearCheckouts || [],
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const body = await req.json();
   const { action } = body;
 
@@ -95,16 +95,16 @@ export async function POST(req: NextRequest) {
     gearItem.currentCheckoutId = checkoutId;
     gearItem.updatedAt = new Date().toISOString();
 
-    saveDb(db);
+    await saveDbAsync(db);
 
-    logAudit(
+    await logAudit(
       undefined,
       user,
       'GEAR_CHECKOUT',
       `Checked out "${gearItem.name}" to ${recipient.name} for project "${newRecord.projectOrShowName}" (Return by: ${expectedReturnDate})`
     );
 
-    createNotification(
+    await createNotification(
       recipient.id,
       'Studio Gear Checked Out',
       `You checked out ${gearItem.name} from the studio (due back: ${expectedReturnDate}).`,
@@ -155,9 +155,9 @@ export async function POST(req: NextRequest) {
       gearItem.updatedAt = new Date().toISOString();
     }
 
-    saveDb(db);
+    await saveDbAsync(db);
 
-    logAudit(
+    await logAudit(
       undefined,
       user,
       'GEAR_CHECKIN',
@@ -199,9 +199,9 @@ export async function POST(req: NextRequest) {
 
     if (!db.gearInventory) db.gearInventory = [];
     db.gearInventory.push(newItem);
-    saveDb(db);
+    await saveDbAsync(db);
 
-    logAudit(undefined, user, 'ADD_GEAR_ITEM', `Added new equipment item: "${newItem.name}" (${newItem.category})`);
+    await logAudit(undefined, user, 'ADD_GEAR_ITEM', `Added new equipment item: "${newItem.name}" (${newItem.category})`);
 
     return NextResponse.json({
       success: true,
@@ -230,9 +230,9 @@ export async function POST(req: NextRequest) {
     }
 
     db.gearInventory = (db.gearInventory || []).filter((g) => g.id !== id);
-    saveDb(db);
+    await saveDbAsync(db);
 
-    logAudit(
+    await logAudit(
       undefined,
       user,
       'DELETE_GEAR_ITEM',
@@ -269,7 +269,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Item ID is required.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const item = (db.gearInventory || []).find((g) => g.id === id);
   if (!item) {
     return NextResponse.json({ error: 'Gear item not found.' }, { status: 404 });
@@ -283,9 +283,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   db.gearInventory = (db.gearInventory || []).filter((g) => g.id !== id);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(
+  await logAudit(
     undefined,
     user,
     'DELETE_GEAR_ITEM',

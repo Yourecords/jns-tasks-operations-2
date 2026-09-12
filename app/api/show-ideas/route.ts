@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { ShowIdea } from '@/lib/types';
 import { logAudit } from '@/lib/workflow';
 
-export async function GET() {
-  const db = getDb();
+export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized: Session required" }, { status: 401 });
+  const db = await getDbAsync();
   return NextResponse.json({ showIdeas: db.showIdeas });
 }
 
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Please provide Show Name, Concept, and Why JNS Should Make It.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const newIdea: ShowIdea = {
     id: `idea_${Date.now()}`,
     showName: data.showName.trim(),
@@ -42,8 +44,8 @@ export async function POST(req: NextRequest) {
   };
 
   db.showIdeas.unshift(newIdea);
-  saveDb(db);
-  logAudit(undefined, user, 'CREATE_SHOW_IDEA', `Submitted new show idea: "${newIdea.showName}"`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'CREATE_SHOW_IDEA', `Submitted new show idea: "${newIdea.showName}"`);
   return NextResponse.json({ success: true, idea: newIdea });
 }
 
@@ -54,12 +56,12 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { id, status } = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
   const idea = db.showIdeas.find((i) => i.id === id);
   if (!idea) return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
 
   idea.status = status;
-  saveDb(db);
-  logAudit(undefined, user, 'UPDATE_SHOW_IDEA_STATUS', `Updated status of "${idea.showName}" to ${status}`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'UPDATE_SHOW_IDEA_STATUS', `Updated status of "${idea.showName}" to ${status}`);
   return NextResponse.json({ success: true, idea });
 }

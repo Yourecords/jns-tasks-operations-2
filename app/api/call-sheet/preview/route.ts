@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { generateUserCallSheet } from '@/lib/callsheet';
 
@@ -14,10 +14,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const targetUserId = searchParams.get('userId') || currentUser.id;
 
-  const db = getDb();
+  const db = await getDbAsync();
   const targetUser = db.users.find((u) => u.id === targetUserId) || currentUser;
 
-  const callSheet = generateUserCallSheet(targetUser);
+  const callSheet = generateUserCallSheet(targetUser, undefined, db);
 
   return NextResponse.json({
     callSheet,

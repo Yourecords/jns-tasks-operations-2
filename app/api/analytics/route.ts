@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getProductionVelocityMetrics } from '@/lib/analytics';
 
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const summary = getProductionVelocityMetrics(db.productions, db.shows, db.users);
 
   return NextResponse.json({

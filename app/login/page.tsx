@@ -304,49 +304,51 @@ export default function LoginPage() {
               <span>Restricted to authorized <strong style={{ color: 'var(--jns-gold)' }}>@jns.org</strong> accounts</span>
             </div>
 
-            {/* Direct Email Input Option */}
-            <div style={{ marginTop: '1.75rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.07)' }}>
-              <button
-                type="button"
-                onClick={() => setShowManualInput(!showManualInput)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                <span>Or sign in with authorized @jns.org email</span>
-                <ChevronDown size={13} style={{ transform: showManualInput ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
-              </button>
+            {/* Direct Email Input Option (Local Development Only) */}
+            {process.env.NODE_ENV !== 'production' && (
+              <div style={{ marginTop: '1.75rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.07)' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowManualInput(!showManualInput)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span>Development Simulation: Sign in with @jns.org email</span>
+                  <ChevronDown size={13} style={{ transform: showManualInput ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+                </button>
 
-              {showManualInput && (
-                <form onSubmit={handleEmailDevSubmit} style={{ marginTop: '0.85rem' }}>
-                  <div style={{ display: 'flex', gap: '0.45rem' }}>
-                    <input
-                      type="email"
-                      className="form-input"
-                      placeholder="name@jns.org"
-                      value={customEmail}
-                      onChange={(e) => setCustomEmail(e.target.value)}
-                      style={{ fontSize: '12px', height: '38px', flex: 1 }}
-                    />
-                    <button
-                      type="submit"
-                      className="btn btn-primary"
-                      disabled={isAuthenticating}
-                      style={{ height: '38px', padding: '0 0.85rem', fontSize: '12px' }}
-                    >
-                      <ArrowRight size={14} />
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
+                {showManualInput && (
+                  <form onSubmit={handleEmailDevSubmit} style={{ marginTop: '0.85rem' }}>
+                    <div style={{ display: 'flex', gap: '0.45rem' }}>
+                      <input
+                        type="email"
+                        className="form-input"
+                        placeholder="name@jns.org"
+                        value={customEmail}
+                        onChange={(e) => setCustomEmail(e.target.value)}
+                        style={{ fontSize: '12px', height: '38px', flex: 1 }}
+                      />
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={isAuthenticating}
+                        style={{ height: '38px', padding: '0 0.85rem', fontSize: '12px' }}
+                      >
+                        <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
           </div>
         )}
 

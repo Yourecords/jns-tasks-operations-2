@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
-  const db = getDb();
+  const db = await getDbAsync();
   const currentUser = await getAuthenticatedUser(req);
 
   return NextResponse.json({
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { userId } = body;
-  const db = getDb();
+  const db = await getDbAsync();
   const user = db.users.find((u) => u.id === userId && u.isActive !== false);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });

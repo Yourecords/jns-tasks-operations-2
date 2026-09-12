@@ -1670,21 +1670,44 @@ export function saveDb(data: DatabaseSchema): void {
 }
 
 export async function getDbAsync(): Promise<DatabaseSchema> {
-  if (process.env.DATABASE_URL && !globalThis.__jnsDbCache) {
+  if (process.env.DATABASE_URL) {
     const pgState = await loadStateFromPostgres();
-    if (pgState) {
+    if (pgState && pgState.users && pgState.users.length > 0) {
       globalThis.__jnsDbCache = pgState;
       return pgState;
     }
+    // If PostgreSQL schema exists but has no data, seed it directly to PostgreSQL
+    const freshData: DatabaseSchema = {
+      users: SEED_USERS,
+      shows: SEED_SHOWS,
+      productions: generateSeedProductions(),
+      comments: [],
+      auditLogs: SEED_AUDIT_LOGS,
+      meetings: SEED_MEETINGS,
+      improvements: SEED_IMPROVEMENTS,
+      anonymousProblemReports: SEED_ANONYMOUS_REPORTS,
+      showIdeas: SEED_SHOW_IDEAS,
+      equipmentRequests: SEED_EQUIPMENT_REQUESTS,
+      systemSettings: INITIAL_SETTINGS,
+      notifications: SEED_NOTIFICATIONS,
+      gearInventory: SEED_GEAR_INVENTORY,
+      gearCheckouts: SEED_GEAR_CHECKOUTS,
+    };
+    await saveStateToPostgres(freshData);
+    globalThis.__jnsDbCache = freshData;
+    return freshData;
   }
   return getDb();
 }
 
 export async function saveDbAsync(data: DatabaseSchema): Promise<void> {
-  saveDb(data);
+  globalThis.__jnsDbCache = data;
   if (process.env.DATABASE_URL) {
+    // In production, PostgreSQL is the sole source of truth. Do not write to local JSON.
     await saveStateToPostgres(data);
+    return;
   }
+  saveDb(data);
 }
 
 export function resetToSeedData(): DatabaseSchema {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resetToSeedData } from '@/lib/db';
+import { resetToSeedData, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const fresh = resetToSeedData();
+  await saveDbAsync(fresh);
   return NextResponse.json({
     success: true,
     message: 'Database reset to demo seed data.',

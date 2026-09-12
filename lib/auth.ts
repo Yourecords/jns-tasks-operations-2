@@ -1,9 +1,15 @@
 import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { User, UserRole } from './types';
-import { getDb } from './db';
+import { getDbAsync } from './db';
+import { validateProductionEnv } from './env-check';
 
-const SECRET = process.env.NEXTAUTH_SECRET || 'jns-secure-production-jwt-secret-key-32b';
+// In production, enforce that NEXTAUTH_SECRET is present with no fallback
+if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
+  validateProductionEnv();
+}
+
+const SECRET = process.env.NEXTAUTH_SECRET;
 
 /**
  * Resolves the authenticated User from the verified NextAuth session token.
@@ -11,13 +17,18 @@ const SECRET = process.env.NEXTAUTH_SECRET || 'jns-secure-production-jwt-secret-
  */
 export async function getAuthenticatedUser(req: NextRequest): Promise<User | null> {
   try {
+    if (process.env.NODE_ENV === 'production' && !SECRET) {
+      console.error('[AUTH ERROR] NEXTAUTH_SECRET is not configured in production.');
+      return null;
+    }
+
     const token = await getToken({
       req,
       secret: SECRET,
     });
 
     if (token && token.email) {
-      const db = getDb();
+      const db = await getDbAsync();
       const user = db.users.find(
         (u) =>
           u.email.toLowerCase() === (token.email as string).toLowerCase() &&
@@ -29,14 +40,14 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<User | nul
     }
 
     // In local non-production development without Google OAuth credentials, allow dev fallback
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_CLIENT_ID) {
+    if (process.env.NODE_ENV !== 'production') {
       const devCookie = req.cookies.get('jns_user_id')?.value;
-      const db = getDb();
+      const db = await getDbAsync();
       if (devCookie) {
         const found = db.users.find((u) => u.id === devCookie && u.isActive !== false);
         if (found) return found;
       }
-      return db.users.find((u) => u.role === 'ADMIN') || db.users[0];
+      return db.users.find((u) => u.role === 'ADMIN') || db.users[0] || null;
     }
 
     return null;
@@ -51,6 +62,6 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<User | nul
  */
 export function hasRequiredRole(user: User | null, allowedRoles: UserRole[]): boolean {
   if (!user || !user.isActive) return false;
-  if (user.role === 'ADMIN') return true; // Admins have master access
+  if (user.role === 'ADMIN') return true; // Admins have master access across all resources
   return allowedRoles.includes(user.role);
 }

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { logAudit } from '@/lib/workflow';
 
-export async function GET() {
-  const db = getDb();
+export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized: Session required" }, { status: 401 });
+  const db = await getDbAsync();
   return NextResponse.json({ settings: db.systemSettings });
 }
 
@@ -18,7 +20,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const data = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
 
   // If role is PRODUCER, allow updating scheduleUrl and productionEmailUrl
   if (user.role === 'PRODUCER') {
@@ -29,8 +31,8 @@ export async function PATCH(req: NextRequest) {
       db.systemSettings.productionEmailUrl = data.productionEmailUrl;
     }
     db.systemSettings.lastUpdated = new Date().toISOString();
-    saveDb(db);
-    logAudit(undefined, user, 'UPDATE_SCHEDULE_LINK', `Producer ${user.name} updated schedule link to: ${data.scheduleUrl || db.systemSettings.scheduleUrl}`);
+    await saveDbAsync(db);
+    await logAudit(undefined, user, 'UPDATE_SCHEDULE_LINK', `Producer ${user.name} updated schedule link to: ${data.scheduleUrl || db.systemSettings.scheduleUrl}`);
     return NextResponse.json({ success: true, settings: db.systemSettings });
   }
 
@@ -41,7 +43,7 @@ export async function PATCH(req: NextRequest) {
     lastUpdated: new Date().toISOString(),
   };
 
-  saveDb(db);
-  logAudit(undefined, user, 'UPDATE_SETTINGS', `Admin ${user.name} updated system links and settings`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'UPDATE_SETTINGS', `Admin ${user.name} updated system links and settings`);
   return NextResponse.json({ success: true, settings: db.systemSettings });
 }

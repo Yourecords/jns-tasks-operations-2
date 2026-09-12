@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { Show } from '@/lib/types';
 import { logAudit } from '@/lib/workflow';
 
-export async function GET() {
-  const db = getDb();
+export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
+  const db = await getDbAsync();
   return NextResponse.json({ shows: db.shows });
 }
 
@@ -16,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
 
   if (!data.name || data.name.trim().length === 0) {
     return NextResponse.json({ error: 'Show name is required.' }, { status: 400 });
@@ -29,8 +34,8 @@ export async function POST(req: NextRequest) {
       ...data,
       updatedAt: new Date().toISOString(),
     };
-    saveDb(db);
-    logAudit(undefined, user, 'UPDATE_SHOW', `Updated show: ${data.name}`);
+    await saveDbAsync(db);
+    await logAudit(undefined, user, 'UPDATE_SHOW', `Updated show: ${data.name}`);
     return NextResponse.json({ success: true, show: db.shows[existingIndex] });
   }
 
@@ -50,8 +55,8 @@ export async function POST(req: NextRequest) {
   };
 
   db.shows.push(newShow);
-  saveDb(db);
-  logAudit(undefined, user, 'CREATE_SHOW', `Created new show: ${newShow.name}`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'CREATE_SHOW', `Created new show: ${newShow.name}`);
   return NextResponse.json({ success: true, show: newShow });
 }
 
@@ -62,7 +67,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const data = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
 
   if (!data.id) {
     return NextResponse.json({ error: 'Show ID is required for updating.' }, { status: 400 });
@@ -84,8 +89,8 @@ export async function PATCH(req: NextRequest) {
   if (data.description !== undefined) show.description = data.description.trim();
   if (data.notes !== undefined) show.notes = data.notes.trim();
 
-  saveDb(db);
-  logAudit(undefined, user, 'UPDATE_SHOW', `${user.name} (${user.role}) modified parameters for show: "${show.name}"`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'UPDATE_SHOW', `${user.name} (${user.role}) modified parameters for show: "${show.name}"`);
   return NextResponse.json({ success: true, show });
 }
 
@@ -107,7 +112,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Show ID is required.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const showIndex = db.shows.findIndex((s) => s.id === showId);
   if (showIndex === -1) {
     return NextResponse.json({ error: 'Show not found.' }, { status: 404 });
@@ -115,8 +120,8 @@ export async function DELETE(req: NextRequest) {
 
   const showName = db.shows[showIndex].name;
   db.shows.splice(showIndex, 1);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(undefined, user, 'DELETE_SHOW', `${user.name} (${user.role}) removed show "${showName}" from database.`);
+  await logAudit(undefined, user, 'DELETE_SHOW', `${user.name} (${user.role}) removed show "${showName}" from database.`);
   return NextResponse.json({ success: true, message: `Show "${showName}" removed successfully.`, deletedId: showId });
 }

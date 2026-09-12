@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { Meeting, MeetingActionItem } from '@/lib/types';
 import { logAudit } from '@/lib/workflow';
 
-export async function GET() {
-  const db = getDb();
+export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized: Session required" }, { status: 401 });
+  const db = await getDbAsync();
   // Newest first
   const sorted = [...db.meetings].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -20,7 +22,7 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
 
   const meetingId = `mtg_${Date.now()}`;
   const actionItems: MeetingActionItem[] = (data.actionItems || []).map(
@@ -55,8 +57,8 @@ export async function POST(req: NextRequest) {
   };
 
   db.meetings.unshift(newMeeting);
-  saveDb(db);
-  logAudit(undefined, user, 'CREATE_MEETING', `Created meeting summary: "${newMeeting.title}"`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'CREATE_MEETING', `Created meeting summary: "${newMeeting.title}"`);
   return NextResponse.json({ success: true, meeting: newMeeting });
 }
 
@@ -68,7 +70,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { meetingId, actionItemId, status } = body;
 
-  const db = getDb();
+  const db = await getDbAsync();
   const meeting = db.meetings.find((m) => m.id === meetingId);
   if (!meeting) return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
 
@@ -77,8 +79,8 @@ export async function PATCH(req: NextRequest) {
 
   item.status = status;
   meeting.updatedAt = new Date().toISOString();
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(undefined, user, 'UPDATE_ACTION_ITEM', `Updated action item "${item.task}" to ${status}`);
+  await logAudit(undefined, user, 'UPDATE_ACTION_ITEM', `Updated action item "${item.task}" to ${status}`);
   return NextResponse.json({ success: true, meeting });
 }

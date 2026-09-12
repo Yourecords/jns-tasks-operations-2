@@ -1,30 +1,45 @@
 import { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { getDb } from './db';
+import { getDbAsync } from './db';
+import { validateProductionEnv } from './env-check';
 
-export const authOptions: NextAuthOptions = {
-  providers: [
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [
-          GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            authorization: {
-              params: {
-                hd: 'jns.org',
-                prompt: 'select_account',
-                access_type: 'offline',
-                response_type: 'code',
-              },
-            },
-          }),
-        ]
-      : []),
-    // Credentials provider for local staging or dev when GOOGLE_CLIENT_ID is not configured
+// Fail startup in production if any required secrets are missing
+if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
+  validateProductionEnv();
+}
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+// In production, NEXTAUTH_SECRET is strictly required; no fallback secret allowed
+const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+
+const providers: NextAuthOptions['providers'] = [];
+
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  providers.push(
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      authorization: {
+        params: {
+          hd: 'jns.org',
+          prompt: 'select_account',
+          access_type: 'offline',
+          response_type: 'code',
+        },
+      },
+    })
+  );
+}
+
+// CredentialsProvider is ONLY available in non-production environments for local developer simulation.
+// In production, it is completely disabled and excluded: email entry alone must NEVER authenticate anyone.
+if (!isProduction) {
+  providers.push(
     CredentialsProvider({
       id: 'credentials',
-      name: 'Google Workspace Simulation',
+      name: 'Google Workspace Simulation (Development Only)',
       credentials: {
         email: { label: 'JNS Email', type: 'email' },
       },
@@ -34,7 +49,7 @@ export const authOptions: NextAuthOptions = {
         if (!email.endsWith('@jns.org')) {
           throw new Error('Access Restricted: Only @jns.org Google Workspace accounts are permitted.');
         }
-        const db = getDb();
+        const db = await getDbAsync();
         const user = db.users.find((u) => u.email.toLowerCase() === email && u.isActive !== false);
         if (!user) {
           throw new Error(`Access Denied: No active team account found for ${email}.`);
@@ -46,16 +61,20 @@ export const authOptions: NextAuthOptions = {
           image: user.avatarUrl,
         };
       },
-    }),
-  ],
+    })
+  );
+}
+
+export const authOptions: NextAuthOptions = {
+  providers,
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   jwt: {
-    secret: process.env.NEXTAUTH_SECRET || 'jns-secure-production-jwt-secret-key-32b',
+    secret: nextAuthSecret,
   },
-  secret: process.env.NEXTAUTH_SECRET || 'jns-secure-production-jwt-secret-key-32b',
+  secret: nextAuthSecret,
   pages: {
     signIn: '/login',
     error: '/login',
@@ -69,7 +88,7 @@ export const authOptions: NextAuthOptions = {
         console.warn(`[AUTH BLOCKED] Non-jns domain attempted login: ${email}`);
         return false;
       }
-      const db = getDb();
+      const db = await getDbAsync();
       const existingUser = db.users.find((u) => u.email.toLowerCase() === email && u.isActive !== false);
       if (!existingUser) {
         console.warn(`[AUTH BLOCKED] User not in authorized JNS team database: ${email}`);
@@ -79,7 +98,7 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user }) {
       if (user?.email) {
-        const db = getDb();
+        const db = await getDbAsync();
         const existingUser = db.users.find((u) => u.email.toLowerCase() === user.email?.toLowerCase());
         if (existingUser) {
           token.id = existingUser.id;

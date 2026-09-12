@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createNewEpisode, createNewPilot, createNewRental, deleteProduction } from '@/lib/workflow';
 
 export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const type = searchParams.get('type');
   const showId = searchParams.get('showId');
@@ -12,7 +17,7 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get('search')?.toLowerCase();
   const assignedTo = searchParams.get('assignedTo');
 
-  const db = getDb();
+  const db = await getDbAsync();
   let list = db.productions;
 
   if (type) {
@@ -58,13 +63,13 @@ export async function POST(req: NextRequest) {
 
   try {
     if (action === 'CREATE_EPISODE') {
-      const created = createNewEpisode(data, user);
+      const created = await createNewEpisode(data, user);
       return NextResponse.json({ success: true, production: created });
     } else if (action === 'CREATE_PILOT') {
-      const created = createNewPilot(data, user);
+      const created = await createNewPilot(data, user);
       return NextResponse.json({ success: true, production: created });
     } else if (action === 'CREATE_RENTAL') {
-      const created = createNewRental(data, user);
+      const created = await createNewRental(data, user);
       return NextResponse.json({ success: true, production: created });
     } else {
       return NextResponse.json({ error: 'Unknown creation action' }, { status: 400 });
@@ -92,11 +97,10 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    const result = deleteProduction(id, user);
+    const result = await deleteProduction(id, user);
     return NextResponse.json(result);
   } catch (err: any) {
     const status = err.message.includes('Unauthorized') ? 403 : 400;
     return NextResponse.json({ error: err.message || 'Failed to remove production' }, { status });
   }
 }
-

@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { User, Production } from './types';
-import { getDb, saveDb } from './db';
+import { getDb, saveDb, getDbAsync, saveDbAsync } from './db';
 
 // Transporter configuration - password MUST only come from environment variable
 const smtpConfig = {
@@ -255,7 +255,7 @@ export async function dispatchWorkflowEmail({
   details?: Array<{ label: string; value: string }>;
 }): Promise<boolean> {
   try {
-    const db = getDb();
+    const db = await getDbAsync();
     
     // Check if email notifications are enabled
     if (db.systemSettings && (db.systemSettings as any).emailNotificationsEnabled === false) {
@@ -328,7 +328,7 @@ export async function checkAndSendDeadlineAlerts(): Promise<{
   alertsSent: number;
   details: Array<{ productionTitle: string; stage: string; recipient: string; deadline: string }>;
 }> {
-  const db = getDb();
+  const db = await getDbAsync();
   const now = new Date().getTime();
   const alertsSentList: Array<{ productionTitle: string; stage: string; recipient: string; deadline: string }> = [];
 

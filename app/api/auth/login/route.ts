@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { email, userId } = body;
-
-    if (process.env.NODE_ENV === 'production' && process.env.GOOGLE_CLIENT_ID) {
+    // In production, direct login is completely disabled. Email entry alone must never authenticate anyone.
+    if (process.env.NODE_ENV === 'production') {
       return NextResponse.json(
-        { error: 'Direct login is disabled in production. Please use Sign in with Google (@jns.org).' },
+        { error: 'Direct email login is disabled in production. Authentication must use verified Google OAuth (@jns.org).' },
         { status: 403 }
       );
     }
 
-    const db = getDb();
+    const body = await req.json();
+    const { email, userId } = body;
+
+    const db = await getDbAsync();
     let targetUser = null;
 
     if (email) {
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
-    } else if (userId && process.env.NODE_ENV !== 'production') {
+    } else if (userId) {
       targetUser = db.users.find((u) => u.id === userId && u.isActive !== false);
     }
 
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30, // 30 days
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: false,
     });
     return res;
   } catch (err: any) {

@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { logAudit } from '@/lib/workflow';
 
-export async function GET() {
-  const db = getDb();
+export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
+  const db = await getDbAsync();
   return NextResponse.json({ users: db.users });
 }
 
@@ -24,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'User Name is required.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const trimmedName = name.trim();
   const cleanEmail = (email && email.trim()) ? email.trim() : `${trimmedName.toLowerCase().replace(/\s+/g, '')}@jns.org`;
 
@@ -74,9 +79,9 @@ export async function POST(req: NextRequest) {
   };
 
   db.users.push(newUser);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(
+  await logAudit(
     undefined,
     user,
     'CREATE_USER',
@@ -96,7 +101,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { id, role, jobFunction, positionDisplay, memberType, isActive } = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
   const targetUser = db.users.find((u) => u.id === id);
   if (!targetUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
@@ -106,8 +111,8 @@ export async function PATCH(req: NextRequest) {
   if (memberType) targetUser.memberType = memberType;
   if (typeof isActive === 'boolean') targetUser.isActive = isActive;
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     undefined,
     user,
     'UPDATE_USER_PERMISSIONS',
@@ -151,16 +156,16 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const targetUser = db.users.find((u) => u.id === id);
   if (!targetUser) {
     return NextResponse.json({ error: 'User not found in system.' }, { status: 404 });
   }
 
   db.users = db.users.filter((u) => u.id !== id);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(
+  await logAudit(
     undefined,
     user,
     'DELETE_USER',

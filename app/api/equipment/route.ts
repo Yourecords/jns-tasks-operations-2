@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { submitEquipmentRequest, logAudit } from '@/lib/workflow';
 
-export async function GET() {
-  const db = getDb();
+export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized: Session required" }, { status: 401 });
+  const db = await getDbAsync();
   return NextResponse.json({ equipmentRequests: db.equipmentRequests });
 }
 
@@ -17,8 +19,8 @@ export async function POST(req: NextRequest) {
   const data = await req.json();
 
   try {
-    submitEquipmentRequest(data, user);
-    const db = getDb();
+    await submitEquipmentRequest(data, user);
+    const db = await getDbAsync();
     return NextResponse.json({ success: true, equipmentRequests: db.equipmentRequests });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Failed to submit request' }, { status: 400 });
@@ -32,13 +34,13 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { id, status } = await req.json();
-  const db = getDb();
+  const db = await getDbAsync();
   const reqItem = db.equipmentRequests.find((e) => e.id === id);
   if (!reqItem) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
 
   reqItem.status = status;
   reqItem.updatedAt = new Date().toISOString();
-  saveDb(db);
-  logAudit(undefined, user, 'UPDATE_EQUIPMENT_STATUS', `Updated equipment "${reqItem.itemName}" to ${status}`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'UPDATE_EQUIPMENT_STATUS', `Updated equipment "${reqItem.itemName}" to ${status}`);
   return NextResponse.json({ success: true, equipmentRequest: reqItem });
 }

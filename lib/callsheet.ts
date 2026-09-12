@@ -1,5 +1,5 @@
 import { User, Production, ProductionTask } from './types';
-import { getDb, saveDb } from './db';
+import { getDb, saveDb, getDbAsync, saveDbAsync, type DatabaseSchema } from './db';
 import { sendEmail } from './email';
 
 export interface CallSheetItem {
@@ -31,8 +31,8 @@ export interface GeneratedCallSheet {
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-export function generateUserCallSheet(user: User, targetDateStr?: string): GeneratedCallSheet {
-  const db = getDb();
+export function generateUserCallSheet(user: User, targetDateStr?: string, customDb?: DatabaseSchema): GeneratedCallSheet {
+  const db = customDb || getDb();
   const today = targetDateStr || new Date().toISOString().split('T')[0];
   const dateFormatted = new Date(today).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -500,7 +500,7 @@ export async function dispatchDailyCallSheets(targetUserId?: string): Promise<{
   dispatchedCount: number;
   results: Array<{ userId: string; userName: string; email: string; success: boolean; itemsCount: number; error?: string }>;
 }> {
-  const db = getDb();
+  const db = await getDbAsync();
   let recipients = db.users.filter((u) => u.isActive && u.email);
 
   if (targetUserId) {

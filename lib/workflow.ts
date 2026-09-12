@@ -16,7 +16,8 @@ import {
   Priority,
   TaskStatus
 } from './types';
-import { getDb, saveDb, countWords } from './db';
+import { getDb, saveDb, countWords, getDbAsync, saveDbAsync } from './db';
+import { updateProductionWithLock } from './pg';
 import { dispatchWorkflowEmail } from './email';
 
 // RBAC helper utilities
@@ -65,13 +66,13 @@ export function canUserPerform(
   return false;
 }
 
-export function logAudit(
+export async function logAudit(
   productionId: string | undefined,
   user: User,
   action: string,
   details: string
-): void {
-  const db = getDb();
+): Promise<void> {
+  const db = await getDbAsync();
   const log: AuditLog = {
     id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     productionId,
@@ -82,18 +83,18 @@ export function logAudit(
     timestamp: new Date().toISOString(),
   };
   db.auditLogs.unshift(log);
-  saveDb(db);
+  await saveDbAsync(db);
 }
 
-export function createNotification(
+export async function createNotification(
   userId: string,
   title: string,
   message: string,
   linkUrl: string,
   eventType?: 'STAGE_HANDOFF' | 'TASK_ASSIGNED' | 'REVISION_REQUESTED' | 'APPROVAL_REQUIRED' | 'DEADLINE_ALERT' | 'INFO',
   details?: Array<{ label: string; value: string }>
-): void {
-  const db = getDb();
+): Promise<void> {
+  const db = await getDbAsync();
   const notif: InAppNotification = {
     id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     userId,
@@ -104,7 +105,7 @@ export function createNotification(
     createdAt: new Date().toISOString(),
   };
   db.notifications.unshift(notif);
-  saveDb(db);
+  await saveDbAsync(db);
 
   // Background asynchronous email dispatch
   const lower = title.toLowerCase();
@@ -129,7 +130,7 @@ export function createNotification(
 }
 
 // 1. Create Episode / Production
-export function createNewEpisode(
+export async function createNewEpisode(
   data: {
     showId: string;
     episodeNumber: string;
@@ -143,12 +144,12 @@ export function createNewEpisode(
     initialNotes?: string;
   },
   user: User
-): Production {
+): Promise<Production> {
   if (!canUserPerform(user, 'CREATE_EPISODE')) {
     throw new Error('Unauthorized: Only Producers or Administrators can create episodes.');
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const show = db.shows.find((s) => s.id === data.showId);
   if (!show) throw new Error('Show not found.');
 
@@ -194,10 +195,10 @@ export function createNewEpisode(
   };
 
   db.productions.unshift(newProd);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(prodId, user, 'CREATE_EPISODE', `Created new episode: ${title}`);
-  createNotification(
+  await logAudit(prodId, user, 'CREATE_EPISODE', `Created new episode: ${title}`);
+  await createNotification(
     assignedProducer,
     'New Episode Scheduled',
     `You are assigned as producer for ${title}. Filming on ${data.filmingDate}.`,
@@ -212,7 +213,7 @@ export function createNewEpisode(
     ]
   );
   if (assignedEditor && assignedEditor !== assignedProducer) {
-    createNotification(
+    await createNotification(
       assignedEditor,
       'New Episode Assigned for Editing',
       `You are the assigned editor for ${title}. Filming is scheduled for ${data.filmingDate}.`,
@@ -231,7 +232,7 @@ export function createNewEpisode(
 }
 
 // 2. Create Pilot
-export function createNewPilot(
+export async function createNewPilot(
   data: {
     title: string;
     conceptSummary: string;
@@ -244,12 +245,12 @@ export function createNewPilot(
     graphicsId?: string;
   },
   user: User
-): Production {
+): Promise<Production> {
   if (!canUserPerform(user, 'CREATE_PILOT')) {
     throw new Error('Unauthorized: Only Producers or Administrators can create pilots.');
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const prodId = `pilot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   const pilotTask: ProductionTask = {
@@ -291,10 +292,10 @@ export function createNewPilot(
   };
 
   db.productions.unshift(newPilot);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(prodId, user, 'CREATE_PILOT', `Created new pilot: ${data.title}`);
-  createNotification(
+  await logAudit(prodId, user, 'CREATE_PILOT', `Created new pilot: ${data.title}`);
+  await createNotification(
     data.producerId,
     'New Pilot Assigned',
     `You are assigned as producer for pilot "${data.title}". Filming scheduled on ${data.filmingDate}.`,
@@ -308,7 +309,7 @@ export function createNewPilot(
     ]
   );
   if (data.editorId && data.editorId !== data.producerId) {
-    createNotification(
+    await createNotification(
       data.editorId,
       'Pilot Editor Assignment',
       `You are designated editor for pilot "${data.title}".`,
@@ -324,7 +325,7 @@ export function createNewPilot(
 }
 
 // 3. Create Studio Rental
-export function createNewRental(
+export async function createNewRental(
   data: {
     clientName: string;
     projectName: string;
@@ -340,12 +341,12 @@ export function createNewRental(
     priority?: Priority;
   },
   user: User
-): Production {
+): Promise<Production> {
   if (!canUserPerform(user, 'CREATE_RENTAL')) {
     throw new Error('Unauthorized: Only Producers or Administrators can create rental jobs.');
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const prodId = `rental_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const title = `Studio Rental: ${data.clientName} — ${data.projectName}`;
 
@@ -394,21 +395,21 @@ export function createNewRental(
   };
 
   db.productions.unshift(newRental);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(prodId, user, 'CREATE_RENTAL', `Created new rental job for ${data.clientName}`);
+  await logAudit(prodId, user, 'CREATE_RENTAL', `Created new rental job for ${data.clientName}`);
   return newRental;
 }
 
 // 4. Update Task Status (with 1-2 click updates and Blocked requirement)
-export function updateTaskStatus(
+export async function updateTaskStatus(
   taskId: string,
   newStatus: TaskStatus,
   user: User,
   blockedReason?: string,
   blockedHelper?: string
-): ProductionTask {
-  const db = getDb();
+): Promise<ProductionTask> {
+  const db = await getDbAsync();
   let foundTask: ProductionTask | undefined;
   let parentProd: Production | undefined;
 
@@ -453,10 +454,10 @@ export function updateTaskStatus(
     foundTask.completedAt = new Date().toISOString();
   }
 
-  saveDb(db);
+  await saveDbAsync(db);
 
   if (newStatus === 'BLOCKED') {
-    createNotification(
+    await createNotification(
       parentProd.producerId,
       `⚠️ Task Blocked: ${foundTask.title}`,
       `${user.name} reported that "${foundTask.title}" is BLOCKED. Reason: "${blockedReason}". Please review and assist.`,
@@ -472,7 +473,7 @@ export function updateTaskStatus(
     );
   }
 
-  logAudit(
+  await logAudit(
     parentProd.id,
     user,
     `TASK_STATUS_${newStatus}`,
@@ -485,11 +486,11 @@ export function updateTaskStatus(
 }
 
 // 5. STAGE 1 -> Complete Filming (Producer confirms)
-export function completeFilmingStage(
+export async function completeFilmingStage(
   productionId: string,
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -527,13 +528,13 @@ export function completeFilmingStage(
   };
   prod.tasks.push(uploadTask);
 
-  saveDb(db);
-  logAudit(prod.id, user, 'FILMING_COMPLETED', `Marked filming complete. Activated Stage 2: Files Uploaded.`);
+  await saveDbAsync(db);
+  await logAudit(prod.id, user, 'FILMING_COMPLETED', `Marked filming complete. Activated Stage 2: Files Uploaded.`);
   return prod;
 }
 
 // 6. STAGE 2 -> Complete File Upload
-export function completeFileUploadStage(
+export async function completeFileUploadStage(
   productionId: string,
   uploadDetails: {
     dropboxPath?: string;
@@ -543,8 +544,8 @@ export function completeFileUploadStage(
     notes?: string;
   },
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -589,14 +590,14 @@ export function completeFileUploadStage(
   };
   prod.tasks.push(packageTask);
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     'FILES_UPLOADED_COMPLETED',
     `Files uploaded to ${uploadDetails.dropboxPath || uploadDetails.editshareLocation || uploadDetails.url || 'server'}. Activated Stage 3: Producer Package.`
   );
-  createNotification(
+  await createNotification(
     prod.producerId,
     'Files Uploaded — Producer Package Needed',
     `Raw footage uploaded for ${prod.title}. Please prepare notes and B-roll instructions for the editor.`,
@@ -613,7 +614,7 @@ export function completeFileUploadStage(
 }
 
 // 7. STAGE 3 -> Complete Producer Package
-export function completeProducerPackageStage(
+export async function completeProducerPackageStage(
   productionId: string,
   pkgData: {
     editingNotes: string;
@@ -625,8 +626,8 @@ export function completeProducerPackageStage(
     additionalComments?: string;
   },
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -687,14 +688,14 @@ export function completeProducerPackageStage(
   };
   prod.revisionCycles.push(initialCycle);
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     'PRODUCER_PACKAGE_COMPLETED',
     `Producer notes and B-roll ready. Activated Stage 4: Edit Draft 1.`
   );
-  createNotification(
+  await createNotification(
     assignedEditor,
     'New Editing Task — Package Ready',
     `Producer notes and package are ready for ${prod.title}. You have been assigned Edit Draft 1.`,
@@ -712,13 +713,13 @@ export function completeProducerPackageStage(
 }
 
 // 8. STAGE 4 -> Editor Submits Draft for Producer Review
-export function submitDraftForReview(
+export async function submitDraftForReview(
   productionId: string,
   reviewLink: string,
   editorNotes: string,
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -769,14 +770,14 @@ export function submitDraftForReview(
   };
   prod.tasks.push(reviewTask);
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     `SUBMITTED_DRAFT_${currentCycle.draftNumber}`,
     `Editor submitted Draft ${currentCycle.draftNumber} for review (${reviewLink}).`
   );
-  createNotification(
+  await createNotification(
     prod.producerId,
     `Draft ${currentCycle.draftNumber} Ready for Review`,
     `${user.name} submitted Draft ${currentCycle.draftNumber} for ${prod.title}.`,
@@ -794,13 +795,13 @@ export function submitDraftForReview(
 }
 
 // 9. STAGE 4 -> Producer Reviews Draft (APPROVED vs REVISION_REQUIRED)
-export function reviewDraft(
+export async function reviewDraft(
   productionId: string,
   decision: 'APPROVED' | 'REVISION_REQUIRED',
   reviewNotes: string,
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -848,14 +849,14 @@ export function reviewDraft(
     };
     prod.tasks.push(finalAppTask);
 
-    saveDb(db);
-    logAudit(
+    await saveDbAsync(db);
+    await logAudit(
       prod.id,
       user,
       'DRAFT_APPROVED',
       `Producer approved Draft ${currentCycle.draftNumber}. Production awaiting Final Producer Approval.`
     );
-    createNotification(
+    await createNotification(
       prod.producerId,
       'Final Approval Required',
       `Draft ${currentCycle.draftNumber} approved for ${prod.title}. Please provide final producer approval.`,
@@ -898,14 +899,14 @@ export function reviewDraft(
     };
     prod.revisionCycles.push(nextCycle);
 
-    saveDb(db);
-    logAudit(
+    await saveDbAsync(db);
+    await logAudit(
       prod.id,
       user,
       `REVISION_REQUESTED_DRAFT_${currentCycle.draftNumber}`,
       `Producer requested revisions on Draft ${currentCycle.draftNumber}: ${reviewNotes}. Created Draft ${nextDraftNumber}.`
     );
-    createNotification(
+    await createNotification(
       assignedEditor,
       `Revision Requested (Draft ${nextDraftNumber})`,
       `Producer requested revisions on ${prod.title}: "${reviewNotes}". Draft ${nextDraftNumber} is ready to edit.`,
@@ -924,11 +925,11 @@ export function reviewDraft(
 }
 
 // 10. STAGE 5 -> Final Producer Approval
-export function giveFinalApproval(
+export async function giveFinalApproval(
   productionId: string,
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -966,14 +967,14 @@ export function giveFinalApproval(
   };
   prod.tasks.push(uploadFinalTask);
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     'FINAL_APPROVAL_GIVEN',
     `Final producer approval confirmed by ${user.name}. Activated Stage 6: Final Upload.`
   );
-  createNotification(
+  await createNotification(
     assignedEditor,
     'Final Upload Required',
     `Final approval confirmed for ${prod.title}. Please render and upload final master files to YouTube & Dropbox.`,
@@ -990,7 +991,7 @@ export function giveFinalApproval(
 }
 
 // 11. STAGE 6 -> Final File Upload
-export function completeFinalUpload(
+export async function completeFinalUpload(
   productionId: string,
   urls: {
     youtubeUrl?: string;
@@ -998,8 +999,8 @@ export function completeFinalUpload(
     otherDeliveryUrl?: string;
   },
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -1039,14 +1040,14 @@ export function completeFinalUpload(
   };
   prod.tasks.push(publishTask);
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     'FINAL_UPLOAD_COMPLETED',
     `Final master files uploaded. YouTube: ${urls.youtubeUrl || 'N/A'}, Dropbox: ${urls.dropboxUrl || 'N/A'}.`
   );
-  createNotification(
+  await createNotification(
     prod.producerId,
     'Master Uploaded — Ready to Publish',
     `Final master files uploaded for ${prod.title}. Please confirm publication.`,
@@ -1056,15 +1057,15 @@ export function completeFinalUpload(
 }
 
 // 12. STAGE 7 -> Confirm Publication (Completes production and moves to archive)
-export function markPublished(
+export async function markPublished(
   productionId: string,
   data: {
     youtubeUrl?: string;
     publicationDate?: string;
   },
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod) throw new Error('Production not found.');
 
@@ -1088,8 +1089,8 @@ export function markPublished(
     pubTask.completedAt = new Date().toISOString();
   }
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     'EPISODE_PUBLISHED',
@@ -1099,7 +1100,7 @@ export function markPublished(
 }
 
 // 13. Convert Pilot to Show (strictly only when pilot is COMPLETED)
-export function convertPilotToShow(
+export async function convertPilotToShow(
   pilotId: string,
   showData: {
     showName: string;
@@ -1113,8 +1114,8 @@ export function convertPilotToShow(
     notes?: string;
   },
   user: User
-): Show {
-  const db = getDb();
+): Promise<Show> {
+  const db = await getDbAsync();
   const pilot = db.productions.find((p) => p.id === pilotId);
   if (!pilot || pilot.type !== 'PILOT') {
     throw new Error('Pilot not found.');
@@ -1156,8 +1157,8 @@ export function convertPilotToShow(
     pilot.pilotDetails.convertedByUserId = user.id;
   }
 
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     pilot.id,
     user,
     'CONVERT_PILOT_TO_SHOW',
@@ -1167,7 +1168,7 @@ export function convertPilotToShow(
 }
 
 // 14. Studio Rental Workflow Progression
-export function updateRentalStep(
+export async function updateRentalStep(
   productionId: string,
   step: 'RECORDING_DONE' | 'FILES_UPLOADED' | 'LINK_SENT_TO_CLIENT' | 'BILLING_SENT_TO_FINANCE',
   payload: {
@@ -1178,8 +1179,8 @@ export function updateRentalStep(
     financeSentDate?: string;
   },
   user: User
-): Production {
-  const db = getDb();
+): Promise<Production> {
+  const db = await getDbAsync();
   const prod = db.productions.find((p) => p.id === productionId);
   if (!prod || prod.type !== 'RENTAL' || !prod.rentalDetails) {
     throw new Error('Studio Rental not found.');
@@ -1222,8 +1223,8 @@ export function updateRentalStep(
   }
 
   prod.updatedAt = new Date().toISOString();
-  saveDb(db);
-  logAudit(
+  await saveDbAsync(db);
+  await logAudit(
     prod.id,
     user,
     `RENTAL_STEP_${step}`,
@@ -1233,7 +1234,7 @@ export function updateRentalStep(
 }
 
 // 15. Create Improvement Suggestion (Author required, >= 100 substantive words)
-export function submitImprovement(
+export async function submitImprovement(
   data: {
     title: string;
     currentSituation: string;
@@ -1243,7 +1244,7 @@ export function submitImprovement(
     category: any;
   },
   user: User
-): void {
+): Promise<void> {
   const combinedText = `${data.currentSituation} ${data.suggestedImprovement} ${data.whyHelpful}`;
   const totalWords = countWords(combinedText);
   if (totalWords < 100) {
@@ -1252,7 +1253,7 @@ export function submitImprovement(
     );
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   db.improvements.unshift({
     id: `imp_${Date.now()}`,
     title: data.title.trim(),
@@ -1266,12 +1267,12 @@ export function submitImprovement(
     status: 'SUBMITTED',
     createdAt: new Date().toISOString(),
   });
-  saveDb(db);
-  logAudit(undefined, user, 'SUBMIT_IMPROVEMENT', `Submitted improvement idea: "${data.title}"`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'SUBMIT_IMPROVEMENT', `Submitted improvement idea: "${data.title}"`);
 }
 
 // 16. Create Anonymous Problem Report (Strictly zero author metadata, requires solution, >= 100 words)
-export function submitProblemReport(
+export async function submitProblemReport(
   data: {
     title: string;
     problemDescription: string;
@@ -1281,7 +1282,7 @@ export function submitProblemReport(
     isAnonymous: boolean;
   },
   user: User
-): void {
+): Promise<void> {
   if (!data.suggestedSolution || data.suggestedSolution.trim().length < 10) {
     throw new Error('Every problem report MUST include a meaningful proposed solution.');
   }
@@ -1294,7 +1295,7 @@ export function submitProblemReport(
     );
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   // Note: NO authorId or authorName is stored! Airtight anonymity.
   db.anonymousProblemReports.unshift({
     id: `anon_${Date.now()}`,
@@ -1306,17 +1307,17 @@ export function submitProblemReport(
     status: 'NEW',
     createdAt: new Date().toISOString(),
   });
-  saveDb(db);
+  await saveDbAsync(db);
 
   if (data.isAnonymous) {
-    logAudit(undefined, { id: 'anon', name: 'Anonymous', role: 'TEAM_MEMBER', email: '', jobFunction: 'OTHER', isActive: true, createdAt: '' }, 'SUBMIT_PROBLEM_REPORT_ANONYMOUS', `New problem report submitted anonymously: "${data.title}"`);
+    await logAudit(undefined, { id: 'anon', name: 'Anonymous', role: 'TEAM_MEMBER', email: '', jobFunction: 'OTHER', isActive: true, createdAt: '' }, 'SUBMIT_PROBLEM_REPORT_ANONYMOUS', `New problem report submitted anonymously: "${data.title}"`);
   } else {
-    logAudit(undefined, user, 'SUBMIT_PROBLEM_REPORT', `New problem report submitted by ${user.name}: "${data.title}"`);
+    await logAudit(undefined, user, 'SUBMIT_PROBLEM_REPORT', `New problem report submitted by ${user.name}: "${data.title}"`);
   }
 }
 
 // 17. Submit Equipment Request (Must have identifiable product name OR product URL)
-export function submitEquipmentRequest(
+export async function submitEquipmentRequest(
   data: {
     itemName: string;
     category: any;
@@ -1330,7 +1331,7 @@ export function submitEquipmentRequest(
     notes?: string;
   },
   user: User
-): void {
+): Promise<void> {
   if (!data.itemName || data.itemName.trim().length < 4) {
     throw new Error('Please specify a full identifiable product name.');
   }
@@ -1343,7 +1344,7 @@ export function submitEquipmentRequest(
     throw new Error('Vague equipment requests are not allowed. Please provide either a complete product make & model or a direct product link.');
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   db.equipmentRequests.unshift({
     id: `eq_${Date.now()}`,
     itemName: data.itemName.trim(),
@@ -1362,19 +1363,19 @@ export function submitEquipmentRequest(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
-  saveDb(db);
-  logAudit(undefined, user, 'EQUIPMENT_REQUESTED', `Requested equipment: ${data.itemName}`);
+  await saveDbAsync(db);
+  await logAudit(undefined, user, 'EQUIPMENT_REQUESTED', `Requested equipment: ${data.itemName}`);
 }
 
-export function deleteProduction(
+export async function deleteProduction(
   productionId: string,
   user: User
-): { success: boolean; message: string; deletedId: string } {
+): Promise<{ success: boolean; message: string; deletedId: string }> {
   if (user.role !== 'ADMIN' && user.role !== 'PRODUCER') {
     throw new Error('Unauthorized: Only Administrators and Producers can remove productions.');
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const prodIndex = db.productions.findIndex((p) => p.id === productionId);
   if (prodIndex === -1) {
     throw new Error('Production not found.');
@@ -1386,9 +1387,9 @@ export function deleteProduction(
   // Clean up comments related to this production
   db.comments = db.comments.filter((c) => c.productionId !== productionId);
 
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(
+  await logAudit(
     undefined,
     user,
     'DELETE_PRODUCTION',
@@ -1402,11 +1403,11 @@ export function deleteProduction(
   };
 }
 
-export function deleteTask(
+export async function deleteTask(
   taskId: string,
   user: User
-): { success: boolean; message: string; deletedTaskId: string; productionId: string } {
-  const db = getDb();
+): Promise<{ success: boolean; message: string; deletedTaskId: string; productionId: string }> {
+  const db = await getDbAsync();
   let foundTask: ProductionTask | undefined;
   let parentProd: Production | undefined;
 
@@ -1433,9 +1434,9 @@ export function deleteTask(
   }
 
   parentProd.tasks = parentProd.tasks.filter((t) => t.id !== taskId);
-  saveDb(db);
+  await saveDbAsync(db);
 
-  logAudit(
+  await logAudit(
     parentProd.id,
     user,
     'DELETE_TASK',

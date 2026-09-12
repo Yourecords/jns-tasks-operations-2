@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import {
   completeFilmingStage,
@@ -14,18 +14,23 @@ import {
   deleteProduction,
 } from '@/lib/workflow';
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const db = getDb();
-  const prod = db.productions.find((p) => p.id === params.id);
+type RouteContext = { params: Promise<{ id: string }> | { id: string } };
+
+export async function GET(req: NextRequest, context: RouteContext) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
+  const { id } = await Promise.resolve(context.params);
+  const db = await getDbAsync();
+  const prod = db.productions.find((p) => p.id === id);
   if (!prod) {
     return NextResponse.json({ error: 'Production not found' }, { status: 404 });
   }
 
-  const comments = db.comments.filter((c) => c.productionId === params.id);
-  const auditLogs = db.auditLogs.filter((l) => l.productionId === params.id);
+  const comments = db.comments.filter((c) => c.productionId === id);
+  const auditLogs = db.auditLogs.filter((l) => l.productionId === id);
   const show = prod.showId ? db.shows.find((s) => s.id === prod.showId) : undefined;
 
   return NextResponse.json({
@@ -36,14 +41,12 @@ export async function GET(
   });
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, context: RouteContext) {
   const user = await getAuthenticatedUser(req);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
   }
+  const { id } = await Promise.resolve(context.params);
   const body = await req.json();
   const { action, payload } = body;
 
@@ -51,20 +54,20 @@ export async function PATCH(
     let updated;
     switch (action) {
       case 'COMPLETE_FILMING':
-        updated = completeFilmingStage(params.id, user);
+        updated = await completeFilmingStage(id, user);
         break;
 
       case 'COMPLETE_FILE_UPLOAD':
-        updated = completeFileUploadStage(params.id, payload, user);
+        updated = await completeFileUploadStage(id, payload, user);
         break;
 
       case 'COMPLETE_PRODUCER_PACKAGE':
-        updated = completeProducerPackageStage(params.id, payload, user);
+        updated = await completeProducerPackageStage(id, payload, user);
         break;
 
       case 'SUBMIT_DRAFT':
-        updated = submitDraftForReview(
-          params.id,
+        updated = await submitDraftForReview(
+          id,
           payload.reviewLink,
           payload.editorNotes,
           user
@@ -72,8 +75,8 @@ export async function PATCH(
         break;
 
       case 'REVIEW_DRAFT':
-        updated = reviewDraft(
-          params.id,
+        updated = await reviewDraft(
+          id,
           payload.decision,
           payload.reviewNotes,
           user
@@ -81,19 +84,19 @@ export async function PATCH(
         break;
 
       case 'GIVE_FINAL_APPROVAL':
-        updated = giveFinalApproval(params.id, user);
+        updated = await giveFinalApproval(id, user);
         break;
 
       case 'COMPLETE_FINAL_UPLOAD':
-        updated = completeFinalUpload(params.id, payload, user);
+        updated = await completeFinalUpload(id, payload, user);
         break;
 
       case 'MARK_PUBLISHED':
-        updated = markPublished(params.id, payload, user);
+        updated = await markPublished(id, payload, user);
         break;
 
       case 'UPDATE_RENTAL_STEP':
-        updated = updateRentalStep(params.id, payload.step, payload, user);
+        updated = await updateRentalStep(id, payload.step, payload, user);
         break;
 
       default:
@@ -106,20 +109,17 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, context: RouteContext) {
   const user = await getAuthenticatedUser(req);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
   }
+  const { id } = await Promise.resolve(context.params);
   try {
-    const result = deleteProduction(params.id, user);
+    const result = await deleteProduction(id, user);
     return NextResponse.json(result);
   } catch (err: any) {
     const status = err.message.includes('Unauthorized') ? 403 : 400;
     return NextResponse.json({ error: err.message || 'Failed to remove production' }, { status });
   }
 }
-

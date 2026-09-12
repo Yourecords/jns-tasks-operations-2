@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/lib/db';
+import { getDbAsync, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { Comment } from '@/lib/types';
 import { logAudit } from '@/lib/workflow';
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Comment content is required.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDbAsync();
   const newComment: Comment = {
     id: `cmt_${Date.now()}`,
     productionId,
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   };
 
   db.comments.push(newComment);
-  saveDb(db);
-  logAudit(productionId, user, 'ADD_COMMENT', `Added comment on production: "${content.slice(0, 50)}..."`);
+  await saveDbAsync(db);
+  await logAudit(productionId, user, 'ADD_COMMENT', `Added comment on production: "${content.slice(0, 50)}..."`);
   return NextResponse.json({ success: true, comment: newComment });
 }

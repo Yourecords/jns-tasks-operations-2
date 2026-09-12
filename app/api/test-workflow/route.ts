@@ -16,7 +16,7 @@ import {
   submitEquipmentRequest,
   updateTaskStatus,
 } from '@/lib/workflow';
-import { getDb, resetToSeedData } from '@/lib/db';
+import { getDbAsync, resetToSeedData, saveDbAsync } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
   try {
     // Reset to clean seed data before testing
     resetToSeedData();
-    let db = getDb();
+    let db = await getDbAsync();
 
     const adminUser = db.users.find((u) => u.role === 'ADMIN')!;
     const producerUser = db.users.find((u) => u.role === 'PRODUCER')!;
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
       }
       let threw = false;
       try {
-        createNewEpisode(
+        await createNewEpisode(
           {
             showId: 'show_the_quad',
             episodeNumber: '999',
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
     // 2. Producer can create episode
     let currentProd: any;
     try {
-      currentProd = createNewEpisode(
+      currentProd = await createNewEpisode(
         {
           showId: 'show_the_quad',
           episodeNumber: '999',
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     // 3. Editor can update assigned task
     try {
       // Find an existing task assigned to editor (e.g. from seed data)
-      db = getDb();
+      db = await getDbAsync();
       let editorTask: any;
       for (const p of db.productions) {
         const t = p.tasks.find((task) => task.assignedUserId === editorUser.id);
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
       }
       if (!editorTask) throw new Error('No task assigned to editor found');
 
-      const updated = updateTaskStatus(editorTask.id, 'IN_PROGRESS', editorUser);
+      const updated = await updateTaskStatus(editorTask.id, 'IN_PROGRESS', editorUser);
       if (updated.status !== 'IN_PROGRESS') throw new Error('Status not updated to IN_PROGRESS');
       results.push({ test: '3. Editor can update assigned task', passed: true });
     } catch (e: any) {
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
       }
       let threw = false;
       try {
-        giveFinalApproval(currentProd.id, editorUser);
+        await giveFinalApproval(currentProd.id, editorUser);
       } catch {
         threw = true;
       }
@@ -133,11 +133,11 @@ export async function GET(req: NextRequest) {
 
     // 5. Revision Required generates next editing revision
     try {
-      currentProd = completeFilmingStage(currentProd.id, producerUser);
-      currentProd = completeFileUploadStage(currentProd.id, { dropboxPath: '/JNS_RAW/test' }, editorUser);
-      currentProd = completeProducerPackageStage(currentProd.id, { editingNotes: 'Test notes' }, producerUser);
-      currentProd = submitDraftForReview(currentProd.id, 'https://frame.io/test-d1', 'First cut', editorUser);
-      currentProd = reviewDraft(currentProd.id, 'REVISION_REQUIRED', 'Trim 10 seconds from intro', producerUser);
+      currentProd = await completeFilmingStage(currentProd.id, producerUser);
+      currentProd = await completeFileUploadStage(currentProd.id, { dropboxPath: '/JNS_RAW/test' }, editorUser);
+      currentProd = await completeProducerPackageStage(currentProd.id, { editingNotes: 'Test notes' }, producerUser);
+      currentProd = await submitDraftForReview(currentProd.id, 'https://frame.io/test-d1', 'First cut', editorUser);
+      currentProd = await reviewDraft(currentProd.id, 'REVISION_REQUIRED', 'Trim 10 seconds from intro', producerUser);
 
       if (
         currentProd.currentStage !== 'EDITING' ||
@@ -153,8 +153,8 @@ export async function GET(req: NextRequest) {
 
     // 6. Approved revision proceeds correctly
     try {
-      currentProd = submitDraftForReview(currentProd.id, 'https://frame.io/test-d2', 'Second cut', editorUser);
-      currentProd = reviewDraft(currentProd.id, 'APPROVED', 'Looks good. Approved.', producerUser);
+      currentProd = await submitDraftForReview(currentProd.id, 'https://frame.io/test-d2', 'Second cut', editorUser);
+      currentProd = await reviewDraft(currentProd.id, 'APPROVED', 'Looks good. Approved.', producerUser);
       if (currentProd.currentStage !== 'FINAL_APPROVAL') {
         throw new Error('Stage should advance to FINAL_APPROVAL');
       }
@@ -167,7 +167,7 @@ export async function GET(req: NextRequest) {
     try {
       let threw = false;
       try {
-        completeFinalUpload(currentProd.id, { youtubeUrl: 'https://youtube.com/test' }, editorUser);
+        await completeFinalUpload(currentProd.id, { youtubeUrl: 'https://youtube.com/test' }, editorUser);
       } catch {
         threw = true;
       }
@@ -179,17 +179,17 @@ export async function GET(req: NextRequest) {
 
     // 8. Published cannot happen before final upload
     try {
-      currentProd = giveFinalApproval(currentProd.id, producerUser);
+      currentProd = await giveFinalApproval(currentProd.id, producerUser);
       let threw = false;
       try {
-        markPublished(currentProd.id, {}, producerUser);
+        await markPublished(currentProd.id, {}, producerUser);
       } catch {
         threw = true;
       }
       if (!threw) throw new Error('Marking published before final upload should fail');
 
-      currentProd = completeFinalUpload(currentProd.id, { youtubeUrl: 'https://youtube.com/final' }, editorUser);
-      currentProd = markPublished(currentProd.id, { youtubeUrl: 'https://youtube.com/final' }, producerUser);
+      currentProd = await completeFinalUpload(currentProd.id, { youtubeUrl: 'https://youtube.com/final' }, editorUser);
+      currentProd = await markPublished(currentProd.id, { youtubeUrl: 'https://youtube.com/final' }, producerUser);
       if (currentProd.status !== 'COMPLETED') throw new Error('Episode status should be COMPLETED');
       results.push({ test: '8. Published reaches COMPLETED only after Final Upload', passed: true });
     } catch (e: any) {
@@ -198,11 +198,11 @@ export async function GET(req: NextRequest) {
 
     // 9. Pilot cannot become show before completion
     try {
-      db = getDb();
+      db = await getDbAsync();
       const activePilot = db.productions.find((p) => p.type === 'PILOT' && p.status === 'ACTIVE')!;
       let threw = false;
       try {
-        convertPilotToShow(activePilot.id, { showName: 'Incomplete Pilot', hosts: 'Host', producerId: producerUser.id, recordingDay: 'Mon', publicationDay: 'Tue', description: 'desc' }, producerUser);
+        await convertPilotToShow(activePilot.id, { showName: 'Incomplete Pilot', hosts: 'Host', producerId: producerUser.id, recordingDay: 'Mon', publicationDay: 'Tue', description: 'desc' }, producerUser);
       } catch {
         threw = true;
       }
@@ -218,7 +218,7 @@ export async function GET(req: NextRequest) {
       const iText = 'This results in significant publication delays for our daily news packages, causes intense frustration across the post-production team, and risks visibly degraded broadcast audio fidelity during high-profile Knesset coverage and international panel interviews.';
       const sText = 'Implement a hardware analog limiter before the audio enters the TVU encoder, calibrate all lavalier gain pots each morning, and provide a standardized 1kHz tone test before every studio recording session to ensure broadcast compliance.';
 
-      submitProblemReport(
+      await submitProblemReport(
         {
           title: 'Clipping on channel 3 telemetry during live switchovers',
           problemDescription: pText,
@@ -229,7 +229,8 @@ export async function GET(req: NextRequest) {
         editorUser
       );
 
-      const latestReport = getDb().anonymousProblemReports[0];
+      const currentDb = await getDbAsync();
+      const latestReport = currentDb.anonymousProblemReports[0];
       if ((latestReport as any).authorId !== undefined || (latestReport as any).authorName !== undefined) {
         throw new Error('Author metadata was found on anonymous report!');
       }
@@ -240,12 +241,12 @@ export async function GET(req: NextRequest) {
 
     // 11. Rental completes only after Finance handoff
     try {
-      db = getDb();
+      db = await getDbAsync();
       const rental = db.productions.find((p) => p.type === 'RENTAL')!;
-      const rStep1 = updateRentalStep(rental.id, 'LINK_SENT_TO_CLIENT', { clientLink: 'https://dropbox.com/jns/rental' }, producerUser);
+      const rStep1 = await updateRentalStep(rental.id, 'LINK_SENT_TO_CLIENT', { clientLink: 'https://dropbox.com/jns/rental' }, producerUser);
       if (rStep1.status === 'COMPLETED') throw new Error('Rental should not be complete before Finance');
 
-      const rStep2 = updateRentalStep(rental.id, 'BILLING_SENT_TO_FINANCE', { financeBillingDetails: 'AP, ap@corp.com', financeAgreedAmount: '$2,000' }, producerUser);
+      const rStep2 = await updateRentalStep(rental.id, 'BILLING_SENT_TO_FINANCE', { financeBillingDetails: 'AP, ap@corp.com', financeAgreedAmount: '$2,000' }, producerUser);
       if (rStep2.status !== 'COMPLETED') throw new Error('Rental should be COMPLETED after finance handoff');
       results.push({ test: '11. Rental completes only after Finance handoff', passed: true });
     } catch (e: any) {
@@ -256,13 +257,13 @@ export async function GET(req: NextRequest) {
     try {
       let threw = false;
       try {
-        submitEquipmentRequest({ itemName: 'Need a monitor', category: 'Monitor', whyNeeded: 'Old broke', urgency: 'NORMAL', quantity: 1 }, editorUser);
+        await submitEquipmentRequest({ itemName: 'Need a monitor', category: 'Monitor', whyNeeded: 'Old broke', urgency: 'NORMAL', quantity: 1 }, editorUser);
       } catch {
         threw = true;
       }
       if (!threw) throw new Error('Vague equipment request should have thrown');
 
-      submitEquipmentRequest({
+      await submitEquipmentRequest({
         itemName: 'Dell UltraSharp 32 4K USB-C Hub Monitor (U3223QE)',
         category: 'Monitor',
         whyNeeded: 'Need color-accurate calibrated display for HDR grading in Premiere Pro.',

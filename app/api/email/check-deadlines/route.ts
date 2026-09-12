@@ -3,6 +3,10 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { checkAndSendDeadlineAlerts } from '@/lib/email';
 
 export async function GET(req: NextRequest) {
+  const user = await getAuthenticatedUser(req);
+  if (!user || (user.role !== "ADMIN" && user.role !== "PRODUCER")) {
+    return NextResponse.json({ error: "Unauthorized: Only Administrators and Producers can check deadlines." }, { status: 403 });
+  }
   try {
     const result = await checkAndSendDeadlineAlerts();
     return NextResponse.json({
