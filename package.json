@@ -1,0 +1,25 @@
+{
+  "name": "jns-video-production-task-management",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test": "node tests/workflow.test.mjs"
+  },
+  "dependencies": {
+    "@types/nodemailer": "^8.0.1",
+    "lucide-react": "^1.16.0",
+    "next": "^14.2.15",
+    "nodemailer": "^10.0.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  }
+}

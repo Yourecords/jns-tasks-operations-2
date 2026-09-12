@@ -1,0 +1,34 @@
+﻿# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing & Scratch
+/coverage
+/scratch
+*.log
+
+# Next.js build output
+/.next/
+/out/
+
+# Production data (persistent json files)
+/data/jns_production_data.json
+
+# Environment files with secrets
+.env*.local
+.env
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# OS & Editor files
+.DS_Store
+*.pem
+Thumbs.db
+.vscode/
+.idea/
+
+# Zip bundles
+*.zip
