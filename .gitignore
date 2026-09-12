@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 /node_modules
 /.pnp
 .pnp.js
@@ -16,8 +16,11 @@
 /data/jns_production_data.json
 
 # Environment files with secrets
-.env*.local
+.env*
 .env
+.env.local
+.env.production
+.env.development
 
 # TypeScript
 *.tsbuildinfo

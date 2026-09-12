@@ -10,8 +10,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role === 'TEAM_MEMBER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || user.role === 'TEAM_MEMBER') {
     return NextResponse.json({ error: 'Unauthorized: Only Producers or Admin can manage shows.' }, { status: 403 });
   }
 
@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role === 'TEAM_MEMBER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || user.role === 'TEAM_MEMBER') {
     return NextResponse.json({ error: 'Unauthorized: Only Producers or Admin can modify shows.' }, { status: 403 });
   }
 
@@ -90,8 +90,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role === 'TEAM_MEMBER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || user.role === 'TEAM_MEMBER') {
     return NextResponse.json({ error: 'Unauthorized: Only Administrators and Producers can remove shows.' }, { status: 403 });
   }
 

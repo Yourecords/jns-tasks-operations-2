@@ -9,8 +9,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role !== 'ADMIN' && user.role !== 'PRODUCER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'PRODUCER')) {
     return NextResponse.json(
       { error: 'Unauthorized: Only Producers and Department Heads can update system settings and links.' },
       { status: 403 }

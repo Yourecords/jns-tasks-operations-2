@@ -49,7 +49,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
   const body = await req.json();
   const { action, ...data } = body;
 
@@ -72,7 +75,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
   const { searchParams } = new URL(req.url);
   let id = searchParams.get('id');
 

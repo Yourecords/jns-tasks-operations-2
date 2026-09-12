@@ -4,8 +4,8 @@ import { dispatchDailyCallSheets } from '@/lib/callsheet';
 import { logAudit } from '@/lib/workflow';
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role !== 'ADMIN') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || user.role !== 'ADMIN') {
     return NextResponse.json(
       { error: 'Unauthorized: Only Administrators can trigger batch call-sheet dispatch.' },
       { status: 403 }

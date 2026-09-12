@@ -15,14 +15,14 @@ import {
   submitProblemReport,
   submitEquipmentRequest,
   updateTaskStatus,
-} from '../lib/workflow.ts';
-import { getDb, resetToSeedData, countWords } from '../lib/db.ts';
+} from '../lib/workflow';
+import { getDb, resetToSeedData, countWords } from '../lib/db';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
 
 // Reset to clean seed data before testing
 resetToSeedData();
-const db = getDb();
+let db = getDb();
 
 const adminUser = db.users.find((u) => u.role === 'ADMIN');
 const producerUser = db.users.find((u) => u.role === 'PRODUCER');
@@ -85,9 +85,17 @@ try {
 
 // Test 3: Editor can update assigned task
 try {
-  const dummyTask = createdEpisode.tasks[0];
-  dummyTask.assignedUserId = editorUser.id; // Assign to editor
-  const updated = updateTaskStatus(dummyTask.id, 'IN_PROGRESS', editorUser);
+  db = getDb();
+  let editorTask;
+  for (const p of db.productions) {
+    const t = p.tasks.find((task) => task.assignedUserId === editorUser.id);
+    if (t) {
+      editorTask = t;
+      break;
+    }
+  }
+  assert(editorTask, 'Task assigned to editor should exist in database');
+  const updated = updateTaskStatus(editorTask.id, 'IN_PROGRESS', editorUser);
   assert.strictEqual(updated.status, 'IN_PROGRESS');
   console.log('✓ Test 3 Passed: Editor can update assigned task to In Progress');
   testsPassed++;
@@ -114,11 +122,11 @@ try {
 // Test 5 & 6: Revision cycle progression & Revision Required generates next revision
 try {
   // Filming -> File Upload
-  completeFilmingStage(createdEpisode.id, producerUser);
+  createdEpisode = completeFilmingStage(createdEpisode.id, producerUser);
   assert.strictEqual(createdEpisode.currentStage, 'FILES_UPLOADED');
 
   // File Upload -> Producer Package
-  completeFileUploadStage(
+  createdEpisode = completeFileUploadStage(
     createdEpisode.id,
     { dropboxPath: '/JNS_RAW/Test_999', notes: '4 ISOs uploaded' },
     editorUser
@@ -126,7 +134,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PRODUCER_PACKAGE');
 
   // Producer Package -> Edit Draft 1
-  completeProducerPackageStage(
+  createdEpisode = completeProducerPackageStage(
     createdEpisode.id,
     { editingNotes: 'Cut tight on opening debate', brollLinks: ['https://drive.google.com/broll'] },
     producerUser
@@ -136,7 +144,7 @@ try {
   assert.strictEqual(createdEpisode.revisionCycles[0].draftNumber, 1);
 
   // Editor submits Draft 1
-  submitDraftForReview(
+  createdEpisode = submitDraftForReview(
     createdEpisode.id,
     'https://frame.io/player/test-999-d1',
     'Draft 1 ready for review',
@@ -145,7 +153,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PRODUCER_REVIEW');
 
   // Producer requests revisions -> generates Draft 2
-  reviewDraft(
+  createdEpisode = reviewDraft(
     createdEpisode.id,
     'REVISION_REQUIRED',
     'Trim 15 seconds from intro and swap lower third graphic',
@@ -159,7 +167,7 @@ try {
   testsPassed++;
 
   // Editor submits Draft 2
-  submitDraftForReview(
+  createdEpisode = submitDraftForReview(
     createdEpisode.id,
     'https://frame.io/player/test-999-d2',
     'Draft 2 with trimmed intro',
@@ -168,7 +176,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PRODUCER_REVIEW');
 
   // Producer approves Draft 2
-  reviewDraft(createdEpisode.id, 'APPROVED', 'Edit looks sharp. Approved.', producerUser);
+  createdEpisode = reviewDraft(createdEpisode.id, 'APPROVED', 'Edit looks sharp. Approved.', producerUser);
   assert.strictEqual(createdEpisode.currentStage, 'FINAL_APPROVAL');
   console.log('✓ Test 6 Passed: Approved revision proceeds to Final Producer Approval');
   testsPassed++;
@@ -198,7 +206,7 @@ try {
 // Test 8: Published cannot happen before Final Upload
 try {
   // Give final approval
-  giveFinalApproval(createdEpisode.id, producerUser);
+  createdEpisode = giveFinalApproval(createdEpisode.id, producerUser);
   assert.strictEqual(createdEpisode.currentStage, 'FINAL_UPLOAD');
 
   // Attempt to mark published before upload
@@ -211,7 +219,7 @@ try {
   assert.strictEqual(threw, true, 'Published before final upload must fail');
 
   // Now complete final upload
-  completeFinalUpload(
+  createdEpisode = completeFinalUpload(
     createdEpisode.id,
     {
       youtubeUrl: 'https://youtube.com/watch?v=master_999',
@@ -222,7 +230,7 @@ try {
   assert.strictEqual(createdEpisode.currentStage, 'PUBLISHED');
 
   // Now Producer marks Published
-  markPublished(
+  createdEpisode = markPublished(
     createdEpisode.id,
     { youtubeUrl: 'https://youtube.com/watch?v=master_999' },
     producerUser
@@ -236,6 +244,7 @@ try {
 
 // Test 9: Pilot cannot become show before completion
 try {
+  db = getDb();
   const activePilot = db.productions.find((p) => p.type === 'PILOT' && p.status === 'ACTIVE');
   assert(activePilot, 'Active pilot should exist');
 
@@ -266,11 +275,11 @@ try {
 // Test 10: Anonymous complaint does not reveal author
 try {
   const longProblem =
-    'The camera telemetry audio track is routinely clipping during multi-camera switchovers because the automatic gain limiter on channel 3 has been drifting during extended studio sessions. This causes editors to spend excessive hours in post-production manually de-clipping dialogue waveforms with iZotope RX.';
+    'The camera telemetry audio track is routinely clipping during multi-camera switchovers because the automatic gain limiter on channel 3 has been drifting during extended studio recording sessions. This causes video editors to spend excessive hours in post-production manually de-clipping dialogue waveforms with specialized audio plugins and repair tools.';
   const longImpact =
-    'This results in significant publication delays for daily news packages, causes frustration across the editing team, and risks degraded broadcast audio fidelity during high-profile Knesset coverage.';
+    'This results in significant publication delays for our daily news packages, causes intense frustration across the post-production team, and risks visibly degraded broadcast audio fidelity during high-profile Knesset coverage and international panel interviews.';
   const longSolution =
-    'Implement a hardware analog limiter before the audio enters the TVU encoder, calibrate all lavalier gain pots each morning, and provide a standardized 1kHz tone test before every studio recording session.';
+    'Implement a hardware analog limiter before the audio enters the TVU encoder, calibrate all lavalier gain pots each morning, and provide a standardized 1kHz tone test before every studio recording session to ensure broadcast compliance.';
 
   const totalWords = countWords(`${longProblem} ${longImpact} ${longSolution}`);
   assert(totalWords >= 100, 'Must meet 100-word substantive threshold');
@@ -301,6 +310,7 @@ try {
 
 // Test 11: Studio Rental completes only after Finance handoff
 try {
+  db = getDb();
   const rental = db.productions.find((p) => p.type === 'RENTAL');
   assert(rental, 'Studio rental must exist');
 
@@ -313,16 +323,17 @@ try {
   }
   assert.strictEqual(threw, true, 'Empty client link must fail');
 
-  updateRentalStep(
+  const rStep1 = updateRentalStep(
     rental.id,
     'LINK_SENT_TO_CLIENT',
     { clientLink: 'https://dropbox.com/jns/rental_delivery' },
     producerUser
   );
-  assert.strictEqual(rental.currentStage, 'LINK_SENT_TO_CLIENT');
+  assert.strictEqual(rStep1.currentStage, 'LINK_SENT_TO_CLIENT');
+  assert.notStrictEqual(rStep1.status, 'COMPLETED');
 
   // Billing details sent to finance completes rental
-  updateRentalStep(
+  const rStep2 = updateRentalStep(
     rental.id,
     'BILLING_SENT_TO_FINANCE',
     {
@@ -332,7 +343,7 @@ try {
     },
     producerUser
   );
-  assert.strictEqual(rental.status, 'COMPLETED');
+  assert.strictEqual(rStep2.status, 'COMPLETED');
   console.log('✓ Test 11 Passed: Rental completes only after Finance billing handoff');
   testsPassed++;
 } catch (err) {
@@ -383,3 +394,7 @@ console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
+
+if (testsPassed !== 12) {
+  process.exit(1);
+}

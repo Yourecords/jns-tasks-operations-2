@@ -9,8 +9,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role !== 'ADMIN' && user.role !== 'PRODUCER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'PRODUCER')) {
     return NextResponse.json(
       { error: 'Unauthorized: Only Administrators and Producers can add team members.' },
       { status: 403 }
@@ -87,8 +87,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role !== 'ADMIN' && user.role !== 'PRODUCER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'PRODUCER')) {
     return NextResponse.json(
       { error: 'Unauthorized: Only Administrators and Producers can modify user permissions.' },
       { status: 403 }
@@ -117,8 +117,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role !== 'ADMIN' && user.role !== 'PRODUCER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'PRODUCER')) {
     return NextResponse.json(
       { error: 'Unauthorized: Only Administrators and Producers can remove users.' },
       { status: 403 }

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   canUserPerform,
   createNewEpisode,
@@ -17,8 +17,23 @@ import {
   updateTaskStatus,
 } from '@/lib/workflow';
 import { getDb, resetToSeedData } from '@/lib/db';
+import { getAuthenticatedUser } from '@/lib/auth';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  if (process.env.NODE_ENV === 'production') {
+    const user = await getAuthenticatedUser(req);
+    const adminSecret = req.headers.get('x-admin-secret');
+    const isAuthorized = (user && user.role === 'ADMIN') || (process.env.ADMIN_RESET_SECRET && adminSecret === process.env.ADMIN_RESET_SECRET);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { error: 'Forbidden: Test workflow endpoint is disabled in production.' },
+        { status: 403 }
+      );
+    }
+  }
+
   const results: { test: string; passed: boolean; message?: string }[] = [];
 
   try {

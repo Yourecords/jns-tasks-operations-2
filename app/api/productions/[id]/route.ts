@@ -40,7 +40,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
   const body = await req.json();
   const { action, payload } = body;
 
@@ -107,7 +110,10 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
   try {
     const result = deleteProduction(params.id, user);
     return NextResponse.json(result);

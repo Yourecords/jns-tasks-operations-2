@@ -42,9 +42,8 @@ interface SidebarProps {
 
 export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
   const pathname = usePathname();
-  const { currentUser, allUsers, switchUser, logout, settings, refreshSettings } = useUser();
+  const { currentUser, logout, settings, refreshSettings } = useUser();
   const { theme, toggleTheme } = useTheme();
-  const [showPersonaMenu, setShowPersonaMenu] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [badgeCounts, setBadgeCounts] = useState({
     myTasks: 0,
@@ -101,9 +100,6 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
 
   useEffect(() => {
     fetchBadges();
-    if (typeof window !== 'undefined' && window.location.search.includes('openPersona=true')) {
-      setShowPersonaMenu(true);
-    }
     const interval = setInterval(fetchBadges, 8000);
     return () => clearInterval(interval);
   }, [currentUser]);
@@ -339,11 +335,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
           </button>
         </div>
 
-        <div
-          className="user-persona-box"
-          onClick={() => setShowPersonaMenu(!showPersonaMenu)}
-          style={{ cursor: 'pointer' }}
-        >
+        <div className="user-persona-box" style={{ cursor: 'default' }}>
           <div className="user-persona-info">
             <div className="user-avatar">
               {currentUser?.name.charAt(0) || 'U'}
@@ -358,99 +350,27 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
               </div>
             </div>
           </div>
-          <ChevronDown size={14} color="var(--text-muted)" />
-        </div>
-
-        {showPersonaMenu && (
-          <div
+          <button
+            type="button"
+            onClick={logout}
+            title="Sign out of JNS Operations"
             style={{
-              marginTop: '0.5rem',
-              backgroundColor: 'var(--bg-input)',
-              border: '1px solid var(--border-medium)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.4rem',
-              maxHeight: '280px',
-              overflowY: 'auto',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '4px',
+              transition: 'color 0.15s ease',
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
           >
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '0.2rem 0.4rem', fontWeight: 700 }}>
-              TEST AS PERSONA:
-            </div>
-            {allUsers.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => {
-                  switchUser(u.id);
-                  setShowPersonaMenu(false);
-                }}
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '0.4rem 0.5rem',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.5rem',
-                  backgroundColor: currentUser?.id === u.id ? 'var(--jns-navy-light)' : 'transparent',
-                  color: currentUser?.id === u.id ? 'var(--jns-gold)' : 'var(--text-light)',
-                  marginBottom: '2px',
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600 }}>{u.name}</div>
-                  {u.fullName && (
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '-1px' }}>
-                      {u.fullName}
-                    </div>
-                  )}
-                </div>
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(229, 169, 60, 0.1)',
-                    color: 'var(--jns-gold)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {u.positionDisplay || u.role}
-                </span>
-              </button>
-            ))}
-
-            <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px solid var(--border-subtle)' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPersonaMenu(false);
-                  logout();
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.45rem 0.5rem',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  color: '#f87171',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  justifyContent: 'center',
-                }}
-              >
-                <LogOut size={13} />
-                <span>Log Out of Session</span>
-              </button>
-            </div>
-          </div>
-        )}
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
 
       <UpdateScheduleModal

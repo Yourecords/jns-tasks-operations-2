@@ -2,14 +2,14 @@ import nodemailer from 'nodemailer';
 import { User, Production } from './types';
 import { getDb, saveDb } from './db';
 
-// Transporter configuration with fallback
+// Transporter configuration - password MUST only come from environment variable
 const smtpConfig = {
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: Number(process.env.SMTP_PORT || 465),
   secure: process.env.SMTP_SECURE === 'false' ? false : true,
   auth: {
     user: process.env.SMTP_USER || 'production@jns.org',
-    pass: process.env.SMTP_PASS || 'nothrwwiitbuokxk',
+    pass: process.env.SMTP_PASS || '',
   },
 };
 
@@ -19,6 +19,9 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 let transporterInstance: any = null;
 
 function getTransporter(): any {
+  if (!process.env.SMTP_PASS) {
+    return null;
+  }
   if (!transporterInstance) {
     transporterInstance = nodemailer.createTransport(smtpConfig);
   }
@@ -29,8 +32,14 @@ function getTransporter(): any {
  * Verify current SMTP connection
  */
 export async function verifySmtpConnection(): Promise<{ success: boolean; message: string }> {
+  if (!process.env.SMTP_PASS) {
+    return { success: false, message: 'SMTP_PASS environment variable is missing or empty. Email dispatch disabled.' };
+  }
   try {
     const transporter = getTransporter();
+    if (!transporter) {
+      return { success: false, message: 'SMTP transporter not initialized (missing SMTP_PASS).' };
+    }
     await transporter.verify();
     return { success: true, message: `SMTP verified successfully via ${smtpConfig.host}:${smtpConfig.port} (${smtpConfig.auth.user})` };
   } catch (error: any) {
@@ -192,8 +201,23 @@ export async function sendEmail({
   html: string;
   text?: string;
 }): Promise<boolean> {
+  // Production build / deployment guard
+  if (process.env.NODE_ENV === 'production' && process.env.ENABLE_EMAIL_DISPATCH !== 'true') {
+    console.log(`[EMAIL SUPPRESSED IN PROD] To: ${to}, Subject: ${subject}`);
+    return false;
+  }
+
+  if (!process.env.SMTP_PASS) {
+    console.warn(`[EMAIL SUPPRESSED] SMTP_PASS environment variable is missing. Email to ${to} was not sent.`);
+    return false;
+  }
+
   try {
     const transporter = getTransporter();
+    if (!transporter) {
+      console.warn(`[EMAIL SUPPRESSED] Transporter unavailable. Email to ${to} was not sent.`);
+      return false;
+    }
     const cleanText = text || subject;
 
     const info = await transporter.sendMail({

@@ -3,8 +3,14 @@ import { getDb } from '@/lib/db';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { generateUserCallSheet } from '@/lib/callsheet';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
-  const currentUser = getAuthenticatedUser(req);
+  const currentUser = await getAuthenticatedUser(req);
+  if (!currentUser) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const targetUserId = searchParams.get('userId') || currentUser.id;
 

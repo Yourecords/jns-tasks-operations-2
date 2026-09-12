@@ -5,7 +5,11 @@ import { Comment } from '@/lib/types';
 import { logAudit } from '@/lib/workflow';
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   const { productionId, taskId, content } = await req.json();
 
   if (!productionId || !content || content.trim().length === 0) {

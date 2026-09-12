@@ -6,7 +6,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   const body = await req.json();
   const { status, blockedReason, blockedHelper } = body;
 
@@ -28,7 +32,11 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   try {
     const result = deleteTask(params.id, user);
     return NextResponse.json(result);
@@ -37,4 +45,3 @@ export async function DELETE(
     return NextResponse.json({ error: err.message || 'Failed to remove task' }, { status });
   }
 }
-

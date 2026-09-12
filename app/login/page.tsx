@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { useUser } from '@/components/UserContext';
-import { ShieldCheck, AlertCircle, ArrowRight, User as UserIcon, Check, Lock, ChevronDown } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ArrowRight, Lock, ChevronDown, Check } from 'lucide-react';
 import { User } from '@/lib/types';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { currentUser, allUsers, login, loading: userLoading } = useUser();
-  const [showAccountModal, setShowAccountModal] = useState(false);
+  const { currentUser, loading: userLoading, login } = useUser();
   const [customEmail, setCustomEmail] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authSuccessUser, setAuthSuccessUser] = useState<User | null>(null);
@@ -23,42 +23,45 @@ export default function LoginPage() {
     }
   }, [currentUser, userLoading, router]);
 
+  // Check URL error parameter from NextAuth
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('choose') === 'true' || params.get('modal') === 'google') {
-        setShowAccountModal(true);
+      const err = params.get('error');
+      if (err === 'AccessDenied') {
+        setErrorMsg('Access Denied: Only authorized @jns.org Google accounts registered in the database may sign in.');
+      } else if (err) {
+        setErrorMsg(`Authentication error: ${err}. Please try again.`);
       }
     }
   }, []);
 
-  const handleSelectAccount = async (targetUser: User) => {
+  const handleGoogleSignIn = async () => {
     setErrorMsg('');
     setIsAuthenticating(true);
     try {
-      const res = await login({ userId: targetUser.id, email: targetUser.email });
-      if (res.success && res.user) {
-        setAuthSuccessUser(res.user);
-        setTimeout(() => {
-          router.push('/');
-        }, 800);
-      } else {
-        setErrorMsg(res.error || 'Failed to authenticate account.');
+      // Trigger Auth.js Google OAuth with redirect to root
+      const result = await signIn('google', {
+        callbackUrl: '/',
+        redirect: true,
+      });
+      if (result?.error) {
+        setErrorMsg(result.error);
         setIsAuthenticating(false);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Authentication error.');
+      setErrorMsg(err.message || 'Google OAuth failed to initialize.');
       setIsAuthenticating(false);
     }
   };
 
-  const handleCustomEmailSubmit = async (e: React.FormEvent) => {
+  const handleEmailDevSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     const trimmed = customEmail.trim().toLowerCase();
 
     if (!trimmed) {
-      setErrorMsg('Please enter your JNS email address.');
+      setErrorMsg('Please enter your official JNS email address.');
       return;
     }
 
@@ -233,10 +236,10 @@ export default function LoginPage() {
           </div>
         ) : (
           <div>
-            {/* Primary Google Sign-In Button */}
+            {/* Primary Google Workspace Sign-In Button */}
             <button
               type="button"
-              onClick={() => setShowAccountModal(true)}
+              onClick={handleGoogleSignIn}
               disabled={isAuthenticating}
               style={{
                 width: '100%',
@@ -283,7 +286,7 @@ export default function LoginPage() {
                   d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                 />
               </svg>
-              <span>Sign in with Google</span>
+              <span>Sign in with Google Workspace</span>
             </button>
 
             {/* Workspace badge hint */}
@@ -301,7 +304,7 @@ export default function LoginPage() {
               <span>Restricted to authorized <strong style={{ color: 'var(--jns-gold)' }}>@jns.org</strong> accounts</span>
             </div>
 
-            {/* Manual Email Input Toggle */}
+            {/* Direct Email Input Option */}
             <div style={{ marginTop: '1.75rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.07)' }}>
               <button
                 type="button"
@@ -317,12 +320,12 @@ export default function LoginPage() {
                   gap: '4px',
                 }}
               >
-                <span>Or sign in with @jns.org email</span>
+                <span>Or sign in with authorized @jns.org email</span>
                 <ChevronDown size={13} style={{ transform: showManualInput ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
               </button>
 
               {showManualInput && (
-                <form onSubmit={handleCustomEmailSubmit} style={{ marginTop: '0.85rem' }}>
+                <form onSubmit={handleEmailDevSubmit} style={{ marginTop: '0.85rem' }}>
                   <div style={{ display: 'flex', gap: '0.45rem' }}>
                     <input
                       type="email"
@@ -353,145 +356,6 @@ export default function LoginPage() {
           <span>JNS Jerusalem News Syndicate &bull; Production System v2.4</span>
         </div>
       </div>
-
-      {/* Google Account Chooser Modal */}
-      {showAccountModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-            padding: '1rem',
-          }}
-          onClick={() => !isAuthenticating && setShowAccountModal(false)}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '460px',
-              backgroundColor: '#1e293b',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '16px',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-              overflow: 'hidden',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Google Modal Header */}
-            <div style={{ padding: '1.5rem 1.5rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.5rem' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-                </svg>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: '#f8fafc' }}>
-                  Sign in with Google
-                </div>
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                Choose your <strong style={{ color: 'var(--jns-gold)' }}>@jns.org</strong> workspace account to continue
-              </div>
-            </div>
-
-            {/* Account List */}
-            <div style={{ maxHeight: '340px', overflowY: 'auto', padding: '0.5rem' }}>
-              {allUsers.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => handleSelectAccount(u)}
-                  disabled={isAuthenticating}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.75rem 1rem',
-                    borderRadius: '10px',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div
-                      style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '50%',
-                        backgroundColor: u.role === 'ADMIN' ? 'var(--jns-gold)' : u.role === 'PRODUCER' ? 'var(--jns-blue)' : 'rgba(255, 255, 255, 0.15)',
-                        color: u.role === 'ADMIN' ? '#0c121e' : '#ffffff',
-                        fontWeight: 700,
-                        fontSize: '14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {u.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '13px' }}>
-                        {u.fullName || u.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {u.email}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      color: u.role === 'ADMIN' ? 'var(--jns-gold)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    {u.positionDisplay || u.role}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Modal Footer */}
-            <div
-              style={{
-                padding: '0.85rem 1.5rem',
-                backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Protected by Google Workspace OAuth
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowAccountModal(false)}
-                disabled={isAuthenticating}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

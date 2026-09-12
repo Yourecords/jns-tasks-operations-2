@@ -293,17 +293,19 @@ export default function TopNavbar({
           )}
         </button>
 
-        {/* Reset Demo Data Helper */}
-        <button
-          className="btn btn-secondary btn-sm nav-reset-btn"
-          onClick={handleResetSeed}
-          disabled={resetting}
-          title="Reset database to demo seed data"
-          style={{ fontSize: '11px', opacity: 0.8 }}
-        >
-          <RefreshCw size={12} className={resetting ? 'spin' : ''} />
-          <span className="reset-demo-text">Reset Demo</span>
-        </button>
+        {/* Reset Demo Data Helper (Development Only) */}
+        {process.env.NODE_ENV !== 'production' && (
+          <button
+            className="btn btn-secondary btn-sm nav-reset-btn"
+            onClick={handleResetSeed}
+            disabled={resetting}
+            title="Reset database to demo seed data"
+            style={{ fontSize: '11px', opacity: 0.8 }}
+          >
+            <RefreshCw size={12} className={resetting ? 'spin' : ''} />
+            <span className="reset-demo-text">Reset Demo</span>
+          </button>
+        )}
 
         {/* Logout Button */}
         <button

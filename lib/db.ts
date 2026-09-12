@@ -1547,13 +1547,26 @@ export const SEED_GEAR_CHECKOUTS: GearCheckoutRecord[] = [
   },
 ];
 
-// Ensure database file exists with seed data
+import { getPgPool, saveStateToPostgres, loadStateFromPostgres } from './pg';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __jnsDbCache: DatabaseSchema | undefined;
+}
+
 export function getDb(): DatabaseSchema {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (globalThis.__jnsDbCache) {
+    return globalThis.__jnsDbCache;
   }
 
   if (!fs.existsSync(DATA_FILE)) {
+    if (!fs.existsSync(DATA_DIR)) {
+      try {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      } catch (e) {
+        // ignore filesystem mkdir error in strict read-only environments
+      }
+    }
     const initialData: DatabaseSchema = {
       users: SEED_USERS,
       shows: SEED_SHOWS,
@@ -1570,7 +1583,12 @@ export function getDb(): DatabaseSchema {
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
     };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
+    try {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
+    } catch (e) {
+      // ignore
+    }
+    globalThis.__jnsDbCache = initialData;
     return initialData;
   }
 
@@ -1596,8 +1614,13 @@ export function getDb(): DatabaseSchema {
       mutated = true;
     }
     if (mutated) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+      try {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+      } catch (e) {
+        // ignore
+      }
     }
+    globalThis.__jnsDbCache = parsed;
     return parsed;
   } catch (err) {
     console.error('Failed to parse database file, resetting to defaults', err);
@@ -1617,16 +1640,51 @@ export function getDb(): DatabaseSchema {
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
     };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(fallbackData, null, 2), 'utf-8');
+    try {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(fallbackData, null, 2), 'utf-8');
+    } catch (e) {
+      // ignore
+    }
+    globalThis.__jnsDbCache = fallbackData;
     return fallbackData;
   }
 }
 
 export function saveDb(data: DatabaseSchema): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  globalThis.__jnsDbCache = data;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (e) {
+    // ignore filesystem write error
   }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+
+  // If PostgreSQL is configured on Railway, sync asynchronously
+  if (process.env.DATABASE_URL) {
+    saveStateToPostgres(data).catch((err) => {
+      console.error('Async PostgreSQL sync failed in saveDb:', err);
+    });
+  }
+}
+
+export async function getDbAsync(): Promise<DatabaseSchema> {
+  if (process.env.DATABASE_URL && !globalThis.__jnsDbCache) {
+    const pgState = await loadStateFromPostgres();
+    if (pgState) {
+      globalThis.__jnsDbCache = pgState;
+      return pgState;
+    }
+  }
+  return getDb();
+}
+
+export async function saveDbAsync(data: DatabaseSchema): Promise<void> {
+  saveDb(data);
+  if (process.env.DATABASE_URL) {
+    await saveStateToPostgres(data);
+  }
 }
 
 export function resetToSeedData(): DatabaseSchema {
@@ -1649,3 +1707,4 @@ export function resetToSeedData(): DatabaseSchema {
   saveDb(freshData);
   return freshData;
 }
+

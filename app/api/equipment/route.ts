@@ -9,7 +9,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   const data = await req.json();
 
   try {
@@ -22,8 +26,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (user.role === 'TEAM_MEMBER') {
+  const user = await getAuthenticatedUser(req);
+  if (!user || user.role === 'TEAM_MEMBER') {
     return NextResponse.json({ error: 'Unauthorized: Only Administrators or Producers can manage equipment status.' }, { status: 403 });
   }
 

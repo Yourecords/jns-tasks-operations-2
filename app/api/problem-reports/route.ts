@@ -9,7 +9,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
   const data = await req.json();
 
   try {

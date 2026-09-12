@@ -4,8 +4,8 @@ import { sendEmail, generateEmailHtml, verifySmtpConnection } from '@/lib/email'
 
 export async function POST(req: NextRequest) {
   try {
-    const user = getAuthenticatedUser(req);
-    if (user.role !== 'ADMIN' && user.role !== 'PRODUCER') {
+    const user = await getAuthenticatedUser(req);
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'PRODUCER')) {
       return NextResponse.json(
         { error: 'Unauthorized: Only Administrators and Producers can send test emails.' },
         { status: 403 }

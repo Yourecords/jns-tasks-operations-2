@@ -14,8 +14,8 @@ function isStudioOrAdmin(user: User): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (!isStudioOrAdmin(user)) {
+  const user = await getAuthenticatedUser(req);
+  if (!user || !isStudioOrAdmin(user)) {
     return NextResponse.json(
       { error: 'Access denied: Equipment Checkout & Studio Gear Log is restricted to Yuri and Ahron.' },
       { status: 403 }
@@ -33,8 +33,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (!isStudioOrAdmin(user)) {
+  const user = await getAuthenticatedUser(req);
+  if (!user || !isStudioOrAdmin(user)) {
     return NextResponse.json(
       { error: 'Access denied: Equipment Checkout & Studio Gear Log is restricted to Yuri and Ahron.' },
       { status: 403 }
@@ -250,8 +250,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const user = getAuthenticatedUser(req);
-  if (!isStudioOrAdmin(user)) {
+  const user = await getAuthenticatedUser(req);
+  if (!user || !isStudioOrAdmin(user)) {
     return NextResponse.json(
       { error: 'Access denied: Equipment Checkout & Studio Gear Log is restricted to Yuri and Ahron.' },
       { status: 403 }
