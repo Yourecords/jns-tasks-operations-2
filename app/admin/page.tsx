@@ -894,25 +894,27 @@ export default function AdminSettingsPage() {
               <div className="section-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div className="section-panel-title">
                   <Mail size={16} color="var(--jns-gold)" />
-                  <span>SMTP Outbound Dispatcher Status</span>
+                  <span>Resend Outbound Dispatcher Status</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#86efac', textTransform: 'uppercase' }}>Online & Active</span>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: testEmailResult?.success ? '#10b981' : testEmailResult?.error ? '#ef4444' : '#f59e0b', display: 'inline-block', boxShadow: `0 0 8px ${testEmailResult?.success ? '#10b981' : testEmailResult?.error ? '#ef4444' : '#f59e0b'}` }} />
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: testEmailResult?.success ? '#86efac' : testEmailResult?.error ? '#fca5a5' : '#fcd34d', textTransform: 'uppercase' }}>
+                    {testEmailResult?.success ? 'Connected & Working' : testEmailResult?.error ? 'Test Failed' : 'Ready for Live Test'}
+                  </span>
                 </div>
               </div>
 
               <div className="section-panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                 <div style={{ background: '#0b1120', padding: '12px 14px', borderRadius: '8px', border: '1px solid #1e293b' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px', fontSize: '12px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>SMTP Gateway:</span>
-                    <span style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>smtp.gmail.com:465 (SSL)</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Email Gateway:</span>
+                    <span style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>Resend HTTPS API</span>
                     
                     <span style={{ color: 'var(--text-muted)' }}>Sender Address:</span>
-                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>production@jns.org</span>
+                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>notifications@jns-video.com</span>
                     
                     <span style={{ color: 'var(--text-muted)' }}>Authentication:</span>
-                    <span style={{ color: '#86efac' }}>Google Workspace App Password (Verified)</span>
+                    <span style={{ color: '#86efac' }}>Resend API Key (stored securely in Railway)</span>
                   </div>
                 </div>
 

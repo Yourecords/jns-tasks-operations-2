@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { sendEmail, generateEmailHtml, verifySmtpConnection } from '@/lib/email';
+import { sendEmailWithResult, generateEmailHtml } from '@/lib/email';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,22 +19,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Target email is required.' }, { status: 400 });
     }
 
-    const verification = await verifySmtpConnection();
-    if (!verification.success) {
-      return NextResponse.json(
-        { error: `SMTP Connection error: ${verification.message}` },
-        { status: 500 }
-      );
-    }
-
     const testHtml = generateEmailHtml({
       recipientName: user.name,
       badgeText: 'Test Dispatch',
       badgeColor: '#10b981',
       headline: 'JNS Video Production Email Dispatcher Verified',
-      summary: `This is a live test email sent from the JNS Video Production Task Management System. All automated task assignment, stage handoff, and deadline reminder dispatches are fully active and connected via production@jns.org.`,
+      summary: `This is a live test email sent from the JNS Video Production Task Management System. Automated task assignment, stage handoff, and deadline reminder emails are connected through the Resend HTTPS API.`,
       details: [
-        { label: 'Sender', value: 'production@jns.org' },
+        { label: 'Sender', value: process.env.RESEND_FROM || 'JNS Video Production <notifications@jns-video.com>' },
+        { label: 'Reply To', value: process.env.RESEND_REPLY_TO || 'production@jns.org' },
         { label: 'Recipient', value: targetEmail },
         { label: 'Sent By', value: `${user.name} (${user.role})` },
         { label: 'Timestamp', value: new Date().toLocaleString() },
@@ -44,22 +37,23 @@ export async function POST(req: NextRequest) {
       actionUrl: '/',
     });
 
-    const sent = await sendEmail({
+    const result = await sendEmailWithResult({
       to: targetEmail,
       subject: `🧪 [Verified] JNS Video Production Email Dispatcher Test (${new Date().toLocaleTimeString()})`,
       html: testHtml,
     });
 
-    if (!sent) {
+    if (!result.success) {
       return NextResponse.json(
-        { error: 'Failed to send email. Check SMTP server logs.' },
+        { error: `Resend API error: ${result.error || 'Failed to send email.'}` },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: `Test email successfully dispatched to ${targetEmail}!`,
+      message: `Test email successfully dispatched to ${targetEmail} via Resend!`,
+      messageId: result.messageId,
     });
   } catch (error: any) {
     console.error('Error in /api/email/test:', error);

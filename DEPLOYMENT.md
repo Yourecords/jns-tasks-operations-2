@@ -17,10 +17,10 @@ In production (`NODE_ENV=production`), the application enforces strict startup v
 | `GOOGLE_CLIENT_ID` | **YES** | Google Cloud OAuth 2.0 Client ID | `123456789-abc.apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | **YES** | Google Cloud OAuth 2.0 Client Secret | `GOCSPX-xxxxxxxxxxxx` |
 | `NEXT_PUBLIC_APP_URL` | Optional | Public application base URL for links in email notifications | `https://jns-tasks.up.railway.app` |
-| `SMTP_HOST` | Optional | SMTP Host for automated email dispatches | `smtp.gmail.com` |
-| `SMTP_PORT` | Optional | SMTP Port | `587` |
-| `SMTP_USER` | Optional | Sender Google Workspace account | `production@jns.org` |
-| `SMTP_PASS` | Optional | Google Workspace 16-character App Password | `xxxx xxxx xxxx xxxx` |
+| `RESEND_API_KEY` | Required for email | Resend sending API key | `re_xxxxxxxxx` |
+| `RESEND_FROM` | Required for email | Sender on a Resend-verified domain | `JNS Video Production <notifications@jns-video.com>` |
+| `RESEND_REPLY_TO` | Optional | Address that receives replies | `production@jns.org` |
+| `ENABLE_EMAIL_DISPATCH` | Required for production email | Must be exactly `true` to send | `true` |
 | `ADMIN_RESET_SECRET` | Optional | Custom secret header token for database resets in production | Strong random token |
 
 ---

@@ -1,51 +1,21 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { User, Production } from './types';
 import { getDb, saveDb, getDbAsync, saveDbAsync } from './db';
 
-// Transporter configuration - password MUST only come from environment variable
-const smtpConfig = {
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: process.env.SMTP_SECURE === 'false' ? false : true,
-  auth: {
-    user: process.env.SMTP_USER || 'production@jns.org',
-    pass: process.env.SMTP_PASS || '',
-  },
-};
-
-const defaultFrom = process.env.SMTP_FROM || '"JNS Video Production" <production@jns.org>';
+const defaultFrom = process.env.RESEND_FROM || 'JNS Video Production <notifications@jns-video.com>';
+const defaultReplyTo = process.env.RESEND_REPLY_TO || 'production@jns.org';
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-let transporterInstance: any = null;
+let resendInstance: Resend | null = null;
 
-function getTransporter(): any {
-  if (!process.env.SMTP_PASS) {
+function getResendClient(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
     return null;
   }
-  if (!transporterInstance) {
-    transporterInstance = nodemailer.createTransport(smtpConfig);
+  if (!resendInstance) {
+    resendInstance = new Resend(process.env.RESEND_API_KEY);
   }
-  return transporterInstance;
-}
-
-/**
- * Verify current SMTP connection
- */
-export async function verifySmtpConnection(): Promise<{ success: boolean; message: string }> {
-  if (!process.env.SMTP_PASS) {
-    return { success: false, message: 'SMTP_PASS environment variable is missing or empty. Email dispatch disabled.' };
-  }
-  try {
-    const transporter = getTransporter();
-    if (!transporter) {
-      return { success: false, message: 'SMTP transporter not initialized (missing SMTP_PASS).' };
-    }
-    await transporter.verify();
-    return { success: true, message: `SMTP verified successfully via ${smtpConfig.host}:${smtpConfig.port} (${smtpConfig.auth.user})` };
-  } catch (error: any) {
-    console.error('SMTP verification failed:', error);
-    return { success: false, message: error.message || 'Failed to connect to SMTP server' };
-  }
+  return resendInstance;
 }
 
 /**
@@ -190,7 +160,7 @@ export function generateEmailHtml({
 /**
  * Dispatch an email notification safely
  */
-export async function sendEmail({
+export async function sendEmailWithResult({
   to,
   subject,
   html,
@@ -200,40 +170,54 @@ export async function sendEmail({
   subject: string;
   html: string;
   text?: string;
-}): Promise<boolean> {
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
   // Production build / deployment guard
   if (process.env.NODE_ENV === 'production' && process.env.ENABLE_EMAIL_DISPATCH !== 'true') {
     console.log(`[EMAIL SUPPRESSED IN PROD] To: ${to}, Subject: ${subject}`);
-    return false;
+    return { success: false, error: 'Email dispatch is disabled. Set ENABLE_EMAIL_DISPATCH=true.' };
   }
 
-  if (!process.env.SMTP_PASS) {
-    console.warn(`[EMAIL SUPPRESSED] SMTP_PASS environment variable is missing. Email to ${to} was not sent.`);
-    return false;
+  if (!process.env.RESEND_API_KEY) {
+    console.warn(`[EMAIL SUPPRESSED] RESEND_API_KEY is missing. Email to ${to} was not sent.`);
+    return { success: false, error: 'RESEND_API_KEY environment variable is missing.' };
   }
 
   try {
-    const transporter = getTransporter();
-    if (!transporter) {
-      console.warn(`[EMAIL SUPPRESSED] Transporter unavailable. Email to ${to} was not sent.`);
-      return false;
+    const resend = getResendClient();
+    if (!resend) {
+      return { success: false, error: 'Resend client is unavailable.' };
     }
     const cleanText = text || subject;
 
-    const info = await transporter.sendMail({
+    const { data, error } = await resend.emails.send({
       from: defaultFrom,
       to,
+      replyTo: defaultReplyTo,
       subject,
       text: cleanText,
       html,
     });
 
-    console.log(`Email dispatched successfully to ${to} (Message ID: ${info.messageId})`);
-    return true;
+    if (error) {
+      console.error(`Resend rejected email to ${to}:`, error);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`Email dispatched successfully to ${to} via Resend (Message ID: ${data?.id})`);
+    return { success: true, messageId: data?.id };
   } catch (error: any) {
     console.error(`Failed to send email to ${to}:`, error);
-    return false;
+    return { success: false, error: error.message || 'Unexpected Resend API error.' };
   }
+}
+
+export async function sendEmail(args: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}): Promise<boolean> {
+  return (await sendEmailWithResult(args)).success;
 }
 
 /**
