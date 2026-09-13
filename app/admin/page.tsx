@@ -961,7 +961,7 @@ export default function AdminSettingsPage() {
                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                   >
                     <Send size={14} />
-                    {testEmailSending ? 'Dispatching via Google SMTP...' : 'Send Live Test Email'}
+                    {testEmailSending ? 'Dispatching via Resend...' : 'Send Live Test Email'}
                   </button>
 
                   {testEmailResult?.success && (

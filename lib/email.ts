@@ -165,16 +165,18 @@ export async function sendEmailWithResult({
   subject,
   html,
   text,
+  skipGuard = false,
 }: {
   to: string;
   subject: string;
   html: string;
   text?: string;
+  skipGuard?: boolean;
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  // Production build / deployment guard
-  if (process.env.NODE_ENV === 'production' && process.env.ENABLE_EMAIL_DISPATCH !== 'true') {
+  // Production build / deployment guard (suppresses background automated emails until explicitly turned on)
+  if (!skipGuard && process.env.NODE_ENV === 'production' && process.env.ENABLE_EMAIL_DISPATCH !== 'true') {
     console.log(`[EMAIL SUPPRESSED IN PROD] To: ${to}, Subject: ${subject}`);
-    return { success: false, error: 'Email dispatch is disabled. Set ENABLE_EMAIL_DISPATCH=true.' };
+    return { success: false, error: 'Email dispatch is disabled. Set ENABLE_EMAIL_DISPATCH=true in your environment variables.' };
   }
 
   if (!process.env.RESEND_API_KEY) {

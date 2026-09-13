@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       to: targetEmail,
       subject: `🧪 [Verified] JNS Video Production Email Dispatcher Test (${new Date().toLocaleTimeString()})`,
       html: testHtml,
+      skipGuard: true,
     });
 
     if (!result.success) {
@@ -50,9 +51,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isAutomatedEnabled = process.env.ENABLE_EMAIL_DISPATCH === 'true';
+    const notice = isAutomatedEnabled
+      ? ''
+      : ' (Automated workflow alerts currently idle: set ENABLE_EMAIL_DISPATCH=true in Railway to turn on automated triggers)';
+
     return NextResponse.json({
       success: true,
-      message: `Test email successfully dispatched to ${targetEmail} via Resend!`,
+      message: `Test email successfully dispatched to ${targetEmail} via Resend!${notice}`,
       messageId: result.messageId,
     });
   } catch (error: any) {
