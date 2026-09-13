@@ -125,7 +125,7 @@ export default function UpdateScheduleModal({ isOpen, onClose }: UpdateScheduleM
           )}
 
           <p style={{ color: 'var(--text-light)', fontSize: '13px', marginBottom: '1rem' }}>
-            This link is displayed in the sidebar and top navigation for all team members to open the live JNS Video Production shooting calendar.
+            This link is displayed in the sidebar and top navigation for all team members to open the live JNS Video Production shooting schedule (Google Sheet, Google Calendar, Notion, or Airtable).
           </p>
 
           <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -137,7 +137,7 @@ export default function UpdateScheduleModal({ isOpen, onClose }: UpdateScheduleM
               className="form-input"
               value={scheduleUrl}
               onChange={(e) => setScheduleUrl(e.target.value)}
-              placeholder="https://calendar.google.com/calendar/u/0/r?cid=..."
+              placeholder="https://docs.google.com/spreadsheets/d/... or Google Calendar link"
               required
               style={{ width: '100%' }}
             />
@@ -149,6 +149,13 @@ export default function UpdateScheduleModal({ isOpen, onClose }: UpdateScheduleM
               QUICK PRESETS:
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              <button
+                type="button"
+                className="filter-tab"
+                onClick={() => applyPreset('https://docs.google.com/spreadsheets')}
+              >
+                Google Sheets
+              </button>
               <button
                 type="button"
                 className="filter-tab"

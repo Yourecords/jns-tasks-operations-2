@@ -843,14 +843,14 @@ export default function AdminSettingsPage() {
             <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">
-                  JNS Video Production Schedule URL (Opens in new tab for all team members)
+                  JNS Video Production Schedule URL (Google Sheet, Google Calendar, Notion, or Airtable)
                 </label>
                 <input
                   type="url"
                   className="form-input"
                   value={scheduleUrl}
                   onChange={(e) => setScheduleUrl(e.target.value)}
-                  placeholder="https://calendar.google.com/..."
+                  placeholder="https://docs.google.com/spreadsheets/d/... or https://calendar.google.com/..."
                   required
                 />
               </div>
