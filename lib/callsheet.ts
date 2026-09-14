@@ -62,7 +62,7 @@ export function generateUserCallSheet(user: User, targetDateStr?: string, custom
         badgeColor: '#3b82f6',
         items: shootsToday.map((p) => ({
           title: p.title,
-          subtitle: `Type: ${p.type} • Priority: ${p.priority} • Producer: ${db.users.find((u) => u.id === p.producerId)?.name || 'Unassigned'}`,
+          subtitle: `Type: ${p.type}${p.filmingTime ? ` • Time: ${p.filmingTime}` : ''} • Priority: ${p.priority} • Producer: ${db.users.find((u) => u.id === p.producerId)?.name || 'Unassigned'}`,
           linkUrl: `/productions/${p.id}`,
           priority: p.priority,
           badge: p.type === 'RENTAL' ? 'RENTAL CLIENT' : 'STUDIO SHOOT',
@@ -286,7 +286,7 @@ export function generateUserCallSheet(user: User, targetDateStr?: string, custom
         badgeColor: '#3b82f6',
         items: studioShoots.map((p) => ({
           title: p.title,
-          subtitle: p.type === 'RENTAL' ? `Client Rental: ${p.rentalDetails?.clientName || 'Client'} (${p.rentalDetails?.recordingTime || 'Day booking'})` : `Studio Production • Producer: ${db.users.find((u) => u.id === p.producerId)?.name || 'Producer'}`,
+          subtitle: p.type === 'RENTAL' ? `Client Rental: ${p.rentalDetails?.clientName || 'Client'} (${p.rentalDetails?.recordingTime || 'Day booking'})` : `Studio Production${p.filmingTime ? ` (${p.filmingTime})` : ''} • Producer: ${db.users.find((u) => u.id === p.producerId)?.name || 'Producer'}`,
           linkUrl: `/productions/${p.id}`,
           badge: p.type === 'RENTAL' ? 'CLIENT RENTAL' : 'STUDIO SHOOT',
           badgeColor: p.type === 'RENTAL' ? '#8b5cf6' : '#3b82f6',

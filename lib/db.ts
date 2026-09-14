@@ -457,6 +457,7 @@ function generateSeedProductions(): Production[] {
       priority: 'HIGH',
       currentStage: 'FILMING',
       filmingDate: today,
+      filmingTime: '10:30',
       editingDeadline: tomorrow,
       publicationDeadline: tomorrow,
       createdById: 'usr_zach_producer',

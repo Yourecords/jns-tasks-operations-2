@@ -106,8 +106,8 @@ export default function PilotsPage() {
                       </div>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-muted)' }}>Filming Date:</span>
-                      <div style={{ fontWeight: 600 }}>{pilot.filmingDate || 'Scheduled'}</div>
+                      <span style={{ color: 'var(--text-muted)' }}>Filming:</span>
+                      <div style={{ fontWeight: 600 }}>{pilot.filmingDate || 'Scheduled'}{pilot.filmingTime ? ` @ ${pilot.filmingTime}` : ''}</div>
                     </div>
                     <div>
                       <span style={{ color: 'var(--text-muted)' }}>Producer:</span>

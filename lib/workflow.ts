@@ -131,6 +131,7 @@ export async function createNewEpisode(
     showId: string;
     episodeNumber: string;
     filmingDate: string;
+    filmingTime?: string;
     editingDeadline?: string;
     publicationDeadline?: string;
     priority: Priority;
@@ -159,7 +160,7 @@ export async function createNewEpisode(
     id: `tsk_${Date.now()}_film`,
     productionId: prodId,
     stageName: 'FILMING',
-    title: `Filming: ${title}`,
+    title: data.filmingTime ? `Filming: ${title} (${data.filmingTime})` : `Filming: ${title}`,
     assignedUserId: assignedProducer,
     status: 'NOT_STARTED',
     priority: data.priority,
@@ -178,6 +179,7 @@ export async function createNewEpisode(
     priority: data.priority,
     currentStage: 'FILMING',
     filmingDate: data.filmingDate,
+    filmingTime: data.filmingTime,
     editingDeadline: data.editingDeadline,
     publicationDeadline: data.publicationDeadline,
     createdById: user.id,
@@ -196,13 +198,14 @@ export async function createNewEpisode(
   await createNotification(
     assignedProducer,
     'New Episode Scheduled',
-    `You are assigned as producer for ${title}. Filming on ${data.filmingDate}.`,
+    `You are assigned as producer for ${title}. Filming on ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}.`,
     `/productions/${prodId}`,
     'TASK_ASSIGNED',
     [
       { label: 'Show', value: show.name },
       { label: 'Episode', value: `Episode ${data.episodeNumber}` },
       { label: 'Filming Date', value: data.filmingDate },
+      ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
       { label: 'Editing Deadline', value: data.editingDeadline || 'Standard turnaround' },
       { label: 'Priority', value: data.priority },
     ]
@@ -211,13 +214,14 @@ export async function createNewEpisode(
     await createNotification(
       assignedEditor,
       'New Episode Assigned for Editing',
-      `You are the assigned editor for ${title}. Filming is scheduled for ${data.filmingDate}.`,
+      `You are the assigned editor for ${title}. Filming is scheduled for ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}.`,
       `/productions/${prodId}`,
       'TASK_ASSIGNED',
       [
         { label: 'Show', value: show.name },
         { label: 'Episode', value: `Episode ${data.episodeNumber}` },
         { label: 'Filming Date', value: data.filmingDate },
+        ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
         { label: 'Editing Deadline', value: data.editingDeadline || 'Standard turnaround' },
       ]
     );
@@ -232,6 +236,7 @@ export async function createNewPilot(
     title: string;
     conceptSummary: string;
     filmingDate: string;
+    filmingTime?: string;
     editingDeadline?: string;
     publicationDeadline?: string;
     priority: Priority;
@@ -252,7 +257,7 @@ export async function createNewPilot(
     id: `tsk_${Date.now()}_pilot_preprod`,
     productionId: prodId,
     stageName: 'FILMING',
-    title: `Pre-Production & Filming: ${data.title}`,
+    title: data.filmingTime ? `Pre-Production & Filming: ${data.title} (${data.filmingTime})` : `Pre-Production & Filming: ${data.title}`,
     assignedUserId: data.producerId,
     status: 'NOT_STARTED',
     priority: data.priority,
@@ -269,6 +274,7 @@ export async function createNewPilot(
     priority: data.priority,
     currentStage: 'FILMING',
     filmingDate: data.filmingDate,
+    filmingTime: data.filmingTime,
     editingDeadline: data.editingDeadline,
     publicationDeadline: data.publicationDeadline,
     createdById: user.id,
@@ -292,13 +298,14 @@ export async function createNewPilot(
   await createNotification(
     data.producerId,
     'New Pilot Assigned',
-    `You are assigned as producer for pilot "${data.title}". Filming scheduled on ${data.filmingDate}.`,
+    `You are assigned as producer for pilot "${data.title}". Filming scheduled on ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}.`,
     `/productions/${prodId}`,
     'TASK_ASSIGNED',
     [
       { label: 'Pilot Title', value: data.title },
       { label: 'Concept Summary', value: data.conceptSummary },
       { label: 'Filming Date', value: data.filmingDate },
+      ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
       { label: 'Editing Deadline', value: data.editingDeadline || 'TBD' },
     ]
   );
@@ -312,6 +319,7 @@ export async function createNewPilot(
       [
         { label: 'Pilot Title', value: data.title },
         { label: 'Filming Date', value: data.filmingDate },
+        ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
       ]
     );
   }

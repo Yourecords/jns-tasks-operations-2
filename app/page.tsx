@@ -495,7 +495,7 @@ export default function DashboardPage() {
                         {prod.title}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Filming: <strong>{prod.filmingDate === todayStr ? 'TODAY' : prod.filmingDate}</strong> • Producer: {getUserName(prod.producerId)}
+                        Filming: <strong>{prod.filmingDate === todayStr ? 'TODAY' : prod.filmingDate}{prod.filmingTime ? ` @ ${prod.filmingTime}` : ''}</strong> • Producer: {getUserName(prod.producerId)}
                       </div>
                     </div>
                     <Link href={`/productions/${prod.id}`} className="btn btn-secondary btn-sm">
@@ -566,7 +566,7 @@ export default function DashboardPage() {
                     </td>
                     <td>
                       <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>
-                        <div>Film: {prod.filmingDate || 'N/A'}</div>
+                        <div>Film: {prod.filmingDate || 'N/A'}{prod.filmingTime ? ` @ ${prod.filmingTime}` : ''}</div>
                         {prod.publicationDeadline && <div>Pub: {prod.publicationDeadline}</div>}
                       </div>
                     </td>

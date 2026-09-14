@@ -283,7 +283,7 @@ export default function ProductionsPage() {
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>
-                          <div>Film: {prod.filmingDate || 'N/A'}</div>
+                          <div>Film: {prod.filmingDate || 'N/A'}{prod.filmingTime ? ` @ ${prod.filmingTime}` : ''}</div>
                           {prod.publicationDeadline && <div>Pub: {prod.publicationDeadline}</div>}
                         </div>
                       </td>

@@ -174,6 +174,7 @@ export interface Production {
   priority: Priority;
   currentStage: WorkflowStage;
   filmingDate?: string;
+  filmingTime?: string;
   editingDeadline?: string;
   publicationDeadline?: string;
   publishedAt?: string;

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import {
   canUserPerform,
   createNewEpisode,
+  createNewPilot,
   completeFilmingStage,
   completeFileUploadStage,
   completeProducerPackageStage,
@@ -78,6 +79,7 @@ try {
       showId: 'show_the_quad',
       episodeNumber: '999',
       filmingDate: '2026-09-15',
+      filmingTime: '10:30',
       priority: 'HIGH',
       producerId: producerUser.id,
       editorId: editorUser.id,
@@ -87,7 +89,24 @@ try {
   assert(createdEpisode, 'Episode should be created');
   assert.strictEqual(createdEpisode.currentStage, 'FILMING');
   assert.strictEqual(createdEpisode.status, 'ACTIVE');
-  console.log('✓ Test 2 Passed: Producer can create episode and initialize Stage 1: Filming');
+  assert.strictEqual(createdEpisode.filmingTime, '10:30');
+
+  // Verify pilot creation with filmingTime
+  const testPilot = await createNewPilot(
+    {
+      title: 'Investigation Pilot',
+      conceptSummary: 'New investigative weekly pilot',
+      filmingDate: '2026-09-20',
+      filmingTime: '14:00 - 16:30 IDT',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+  assert.strictEqual(testPilot.filmingTime, '14:00 - 16:30 IDT');
+
+  console.log('✓ Test 2 Passed: Producer can create episode & pilot with filming time and initialize Stage 1');
   testsPassed++;
 } catch (err) {
   console.error('✗ Test 2 Failed', err);

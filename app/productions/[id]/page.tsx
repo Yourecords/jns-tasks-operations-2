@@ -406,10 +406,10 @@ export default function ProductionDetailPage() {
 
         <div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
-            Filming Date
+            Filming Date & Time
           </div>
           <div style={{ fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>
-            {production.filmingDate || 'N/A'}
+            {production.filmingDate || 'N/A'}{production.filmingTime ? ` • ${production.filmingTime}` : ''}
           </div>
         </div>
 
@@ -496,7 +496,7 @@ export default function ProductionDetailPage() {
             {production.currentStage === 'FILMING' && (
               <div>
                 <p style={{ color: 'var(--text-light)', marginBottom: '1rem' }}>
-                  Filming is currently scheduled for <strong>{production.filmingDate || 'today'}</strong>. The Producer or Studio Operator confirms when recording wrap is achieved.
+                  Filming is currently scheduled for <strong>{production.filmingDate || 'today'}{production.filmingTime ? ` at ${production.filmingTime}` : ''}</strong>. The Producer or Studio Operator confirms when recording wrap is achieved.
                 </p>
                 {isProducerOrAdmin ? (
                   <button

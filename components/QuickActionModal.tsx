@@ -42,6 +42,7 @@ export default function QuickActionModal({
   const [epShowId, setEpShowId] = useState('');
   const [epNumber, setEpNumber] = useState('');
   const [epFilmingDate, setEpFilmingDate] = useState(new Date().toISOString().split('T')[0]);
+  const [epFilmingTime, setEpFilmingTime] = useState('10:00');
   const [epEditingDeadline, setEpEditingDeadline] = useState('');
   const [epPubDeadline, setEpPubDeadline] = useState('');
   const [epPriority, setEpPriority] = useState('NORMAL');
@@ -52,6 +53,7 @@ export default function QuickActionModal({
   const [pilotTitle, setPilotTitle] = useState('');
   const [pilotConcept, setPilotConcept] = useState('');
   const [pilotFilmingDate, setPilotFilmingDate] = useState(new Date().toISOString().split('T')[0]);
+  const [pilotFilmingTime, setPilotFilmingTime] = useState('10:00');
   const [pilotPriority, setPilotPriority] = useState('NORMAL');
   const [pilotProducerId, setPilotProducerId] = useState('');
   const [pilotEditorId, setPilotEditorId] = useState('');
@@ -172,6 +174,7 @@ export default function QuickActionModal({
           showId: epShowId,
           episodeNumber: epNumber,
           filmingDate: epFilmingDate,
+          filmingTime: epFilmingTime || undefined,
           editingDeadline: epEditingDeadline || undefined,
           publicationDeadline: epPubDeadline || undefined,
           priority: epPriority,
@@ -206,6 +209,7 @@ export default function QuickActionModal({
           title: pilotTitle,
           conceptSummary: pilotConcept,
           filmingDate: pilotFilmingDate,
+          filmingTime: pilotFilmingTime || undefined,
           priority: pilotPriority,
           producerId: pilotProducerId,
           editorId: pilotEditorId || undefined,
@@ -546,7 +550,7 @@ export default function QuickActionModal({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">
                     Filming Date <span className="req">*</span>
@@ -557,6 +561,18 @@ export default function QuickActionModal({
                     value={epFilmingDate}
                     onChange={(e) => setEpFilmingDate(e.target.value)}
                     required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Filming Time</label>
+                  <input
+                    type="text"
+                    list="filming-time-presets"
+                    className="form-input"
+                    placeholder="e.g. 10:00 or 14:00-16:00"
+                    value={epFilmingTime}
+                    onChange={(e) => setEpFilmingTime(e.target.value)}
                   />
                 </div>
 
@@ -679,9 +695,11 @@ export default function QuickActionModal({
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
-                  <label className="form-label">Filming Date</label>
+                  <label className="form-label">
+                    Filming Date <span className="req">*</span>
+                  </label>
                   <input
                     type="date"
                     className="form-input"
@@ -691,6 +709,20 @@ export default function QuickActionModal({
                   />
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label">Filming Time</label>
+                  <input
+                    type="text"
+                    list="filming-time-presets"
+                    className="form-input"
+                    placeholder="e.g. 10:00 or 14:00-16:00"
+                    value={pilotFilmingTime}
+                    onChange={(e) => setPilotFilmingTime(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">Producer</label>
                   <select
@@ -1415,6 +1447,26 @@ export default function QuickActionModal({
               </div>
             </form>
           )}
+
+          <datalist id="filming-time-presets">
+            <option value="09:00" />
+            <option value="09:30" />
+            <option value="10:00" />
+            <option value="10:30" />
+            <option value="11:00" />
+            <option value="11:30" />
+            <option value="12:00" />
+            <option value="13:00" />
+            <option value="13:30" />
+            <option value="14:00" />
+            <option value="14:30" />
+            <option value="15:00" />
+            <option value="15:30" />
+            <option value="16:00" />
+            <option value="17:00" />
+            <option value="10:00 - 12:00" />
+            <option value="14:00 - 16:30 IDT" />
+          </datalist>
         </div>
       </div>
     </div>
