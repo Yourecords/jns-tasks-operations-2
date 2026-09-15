@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
     const adminUser = db.users.find((u) => u.role === 'ADMIN')!;
     const producerUser = db.users.find((u) => u.role === 'PRODUCER')!;
     const editorUser = db.users.find((u) => u.jobFunction === 'VIDEO_EDITOR')!;
+    const studioUser = db.users.find((u) => u.jobFunction === 'STUDIO_OPERATOR')!;
 
     // 1. Team Member cannot create production
     try {
@@ -128,7 +129,17 @@ export async function GET(req: NextRequest) {
 
     // 5. Revision Required generates next editing revision
     try {
-      currentProd = await completeFilmingStage(currentProd.id, producerUser);
+      let producerFilmingThrew = false;
+      try {
+        await completeFilmingStage(currentProd.id, producerUser);
+      } catch {
+        producerFilmingThrew = true;
+      }
+      if (!producerFilmingThrew) {
+        throw new Error('Producer confirming filming should throw');
+      }
+
+      currentProd = await completeFilmingStage(currentProd.id, studioUser);
       currentProd = await completeFileUploadStage(currentProd.id, { dropboxPath: '/JNS_RAW/test' }, editorUser);
       currentProd = await completeProducerPackageStage(currentProd.id, { editingNotes: 'Test notes' }, producerUser);
       currentProd = await submitDraftForReview(currentProd.id, 'https://frame.io/test-d1', 'First cut', editorUser);

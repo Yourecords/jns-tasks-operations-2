@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, ProductionTask } from '@/lib/types';
+import { sortProductionsByFilmingSchedule } from '@/lib/utils';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import UpdateScheduleModal from '@/components/UpdateScheduleModal';
 
@@ -88,7 +89,7 @@ export default function DashboardPage() {
   // 5. In Progress Productions
   const inProgressProds: Production[] = [];
   // 6. Upcoming Filming
-  const upcomingFilming: Production[] = [];
+  const upcomingFilmingRaw: Production[] = [];
   // 7. Recently Completed
   const recentlyCompleted: Production[] = [];
 
@@ -101,7 +102,7 @@ export default function DashboardPage() {
       }
 
       if (prod.filmingDate && prod.filmingDate >= todayStr && prod.currentStage === 'FILMING') {
-        upcomingFilming.push(prod);
+        upcomingFilmingRaw.push(prod);
       }
 
       prod.tasks.forEach((task) => {
@@ -124,6 +125,9 @@ export default function DashboardPage() {
       recentlyCompleted.push(prod);
     }
   });
+
+  // Arrange filming shoots by date, then by hour of filming (earliest hour of filming on top)
+  const upcomingFilming = sortProductionsByFilmingSchedule(upcomingFilmingRaw);
 
   // Fast 1-click status updater for task
   const handleQuickStatusChange = async (taskId: string, newStatus: string, taskTitle: string) => {
@@ -488,17 +492,41 @@ export default function DashboardPage() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
+                      gap: '0.75rem',
                     }}
                   >
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}>
-                        {prod.title}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Filming: <strong>{prod.filmingDate === todayStr ? 'TODAY' : prod.filmingDate}{prod.filmingTime ? ` @ ${prod.filmingTime}` : ''}</strong> • Producer: {getUserName(prod.producerId)}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                      {prod.filmingTime && (
+                        <div
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                            color: 'var(--jns-gold)',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Clock size={11} />
+                          <span>{prod.filmingTime}</span>
+                        </div>
+                      )}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}>
+                          {prod.title}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Filming: <strong>{prod.filmingDate === todayStr ? 'TODAY' : prod.filmingDate}</strong>{prod.filmingTime ? ` @ ${prod.filmingTime}` : ''} • Producer: {getUserName(prod.producerId)}
+                        </div>
                       </div>
                     </div>
-                    <Link href={`/productions/${prod.id}`} className="btn btn-secondary btn-sm">
+                    <Link href={`/productions/${prod.id}`} className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
                       Open Shoot Details
                     </Link>
                   </div>

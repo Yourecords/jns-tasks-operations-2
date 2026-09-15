@@ -58,13 +58,14 @@ export default function WorkflowBreadcrumb({ production }: WorkflowBreadcrumbPro
 
   // Episode or Pilot workflow
   // Dynamic steps including revision cycles
-  const steps: { label: string; state: 'COMPLETED' | 'ACTIVE' | 'PENDING' | 'REVISION_REQ' }[] = [];
+  const steps: { label: string; state: 'COMPLETED' | 'ACTIVE' | 'PENDING' | 'REVISION_REQ'; roleRequired?: string }[] = [];
 
-  // 1. Filming
+  // 1. Filming (Confirmed by Studio Operator or Admin, not by Producer)
   const filmingDone =
     production.currentStage !== 'FILMING';
   steps.push({
     label: 'FILMING',
+    roleRequired: 'Studio / Admin',
     state: filmingDone ? 'COMPLETED' : 'ACTIVE',
   });
 
@@ -167,12 +168,17 @@ export default function WorkflowBreadcrumb({ production }: WorkflowBreadcrumbPro
 
   return (
     <div className="workflow-timeline-box">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '6px' }}>
         <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
           Workflow Pipeline Timeline
         </div>
-        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--jns-gold)' }}>
-          Current Step: {production.currentStage.replace(/_/g, ' ')}
+        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--jns-gold)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>Current Step: {production.currentStage.replace(/_/g, ' ')}</span>
+          {production.currentStage === 'FILMING' && (
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1px 7px', borderRadius: '4px' }}>
+              Confirmed by Studio Operator or Admin
+            </span>
+          )}
         </div>
       </div>
 
@@ -198,9 +204,28 @@ export default function WorkflowBreadcrumb({ production }: WorkflowBreadcrumbPro
 
           return (
             <React.Fragment key={`${step.label}-${idx}`}>
-              <div className={`timeline-step ${stepClass}`}>
+              <div
+                className={`timeline-step ${stepClass}`}
+                title={step.roleRequired ? `Confirmed by: ${step.roleRequired}` : undefined}
+              >
                 <Icon size={13} color={iconColor} />
                 <span>{step.label}</span>
+                {step.roleRequired && (
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      color: step.state === 'ACTIVE' ? 'var(--jns-gold)' : 'var(--text-muted)',
+                      fontWeight: 700,
+                      letterSpacing: '0.03em',
+                      marginLeft: '2px',
+                    }}
+                  >
+                    {step.roleRequired}
+                  </span>
+                )}
               </div>
               {idx < steps.length - 1 && <span className="timeline-arrow">→</span>}
             </React.Fragment>

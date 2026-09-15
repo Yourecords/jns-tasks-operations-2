@@ -651,7 +651,7 @@ export default function QuickActionModal({
               </div>
 
               <div className="form-help">
-                Creating an episode automatically generates Stage 1: Filming for the producer.
+                Creating an episode automatically generates Stage 1: Filming (to be confirmed by Studio Operator or Admin).
               </div>
 
               <div className="modal-footer" style={{ padding: '0.75rem 0 0' }}>

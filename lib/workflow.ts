@@ -28,6 +28,7 @@ export function canUserPerform(
     | 'CREATE_EPISODE'
     | 'CREATE_PILOT'
     | 'CREATE_RENTAL'
+    | 'CONFIRM_FILMING'
     | 'ASSIGN_TASKS'
     | 'APPROVE_DRAFT'
     | 'FINAL_APPROVAL'
@@ -39,6 +40,11 @@ export function canUserPerform(
     | 'CONVERT_PILOT'
 ): boolean {
   if (user.role === 'ADMIN') return true;
+
+  // Filming completion MUST be confirmed by a Studio Operator or Admin (NOT by a Producer)
+  if (action === 'CONFIRM_FILMING') {
+    return user.jobFunction === 'STUDIO_OPERATOR' || user.id === 'usr_ahron_studio';
+  }
 
   if (user.role === 'PRODUCER') {
     switch (action) {
@@ -53,6 +59,7 @@ export function canUserPerform(
       case 'ACCESS_PRODUCTION_EMAIL':
       case 'CONVERT_PILOT':
         return true;
+      case 'CONFIRM_FILMING':
       case 'MANAGE_USERS':
       case 'MANAGE_SHOWS':
       case 'MANAGE_SETTINGS':
@@ -62,7 +69,7 @@ export function canUserPerform(
     }
   }
 
-  // TEAM_MEMBER cannot perform these elevated actions
+  // TEAM_MEMBER cannot perform these elevated actions unless specifically a Studio Operator confirming filming
   return false;
 }
 
@@ -157,7 +164,7 @@ export async function createNewEpisode(
   const assignedEditor = data.editorId || show.defaultEditorId;
 
   const filmingTask: ProductionTask = {
-    id: `tsk_${Date.now()}_film`,
+    id: `tsk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_film`,
     productionId: prodId,
     stageName: 'FILMING',
     title: data.filmingTime ? `Filming: ${title} (${data.filmingTime})` : `Filming: ${title}`,
@@ -485,13 +492,13 @@ export async function updateTaskStatus(
   return resultingTask;
 }
 
-// 5. STAGE 1 -> Complete Filming (Producer confirms)
+// 5. STAGE 1 -> Complete Filming (Studio Operator or Admin confirms, NOT Producer)
 export async function completeFilmingStage(
   productionId: string,
   user: User
 ): Promise<Production> {
-  if (user.role === 'TEAM_MEMBER') {
-    throw new Error('Unauthorized: Filming completion must be confirmed by a Producer.');
+  if (!canUserPerform(user, 'CONFIRM_FILMING')) {
+    throw new Error('Unauthorized: Filming completion must be confirmed by a Studio Operator or Admin (not by a Producer).');
   }
 
   const updated = await updateProductionWithLock(productionId, async (prod) => {
@@ -525,7 +532,7 @@ export async function completeFilmingStage(
     return prod;
   });
 
-  await logAudit(updated.id, user, 'FILMING_COMPLETED', `Marked filming complete. Activated Stage 2: Files Uploaded.`);
+  await logAudit(updated.id, user, 'FILMING_COMPLETED', `Marked filming complete by Studio Operator/Admin. Activated Stage 2: Files Uploaded.`);
   return updated;
 }
 

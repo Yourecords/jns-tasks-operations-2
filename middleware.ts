@@ -31,7 +31,10 @@ export async function middleware(req: NextRequest) {
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
 
-  if (pathname === '/login' || isNextAuthOAuthRoute) {
+  const isDev = process.env.NODE_ENV !== 'production';
+  const isDevLoginRoute = isDev && pathname === '/api/auth/login';
+
+  if (pathname === '/login' || isNextAuthOAuthRoute || isDevLoginRoute) {
     return NextResponse.next();
   }
 
@@ -49,7 +52,6 @@ export async function middleware(req: NextRequest) {
   }
 
   // Allow non-production dev fallback only if cookie is present and not in production
-  const isDev = process.env.NODE_ENV !== 'production';
   const hasDevCookie = isDev && Boolean(req.cookies.get('jns_user_id')?.value);
 
   const isAuthenticated = Boolean(token?.email) || hasDevCookie;

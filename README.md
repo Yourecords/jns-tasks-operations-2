@@ -19,7 +19,7 @@ This is a purpose-built operational control system designed specifically for the
 
 ### 2. Core Episode Workflow State Machine
 The workflow engine enforces strict linear stage progression:
-1. **Stage 1 — Filming:** Scheduled shoot confirmed by Producer.
+1. **Stage 1 — Filming:** Scheduled shoot confirmed by Studio Operator or Admin (not by a Producer).
 2. **Stage 2 — Files Uploaded:** Raw footage ingest confirmation with EditShare/Dropbox paths and card notes.
 3. **Stage 3 — Producer Editing Package:** Producer compiles editing notes, script rundown, B-roll instructions, and graphics guidelines.
 4. **Stage 4 — Unlimited Revision Cycle:**

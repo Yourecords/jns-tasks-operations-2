@@ -22,6 +22,7 @@ import {
 } from '../lib/workflow';
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
+import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule } from '../lib/utils';
 registerDbAccess({ getDbAsync, saveDbAsync });
 import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
 import { POST as postReset } from '../app/api/reset/route';
@@ -38,10 +39,12 @@ let db = getDb();
 const adminUser = db.users.find((u) => u.role === 'ADMIN');
 const producerUser = db.users.find((u) => u.role === 'PRODUCER');
 const editorUser = db.users.find((u) => u.jobFunction === 'VIDEO_EDITOR');
+const studioUser = db.users.find((u) => u.jobFunction === 'STUDIO_OPERATOR');
 
 assert(adminUser, 'Admin user must exist');
 assert(producerUser, 'Producer user must exist');
 assert(editorUser, 'Editor user must exist');
+assert(studioUser, 'Studio user must exist');
 
 let testsPassed = 0;
 
@@ -150,8 +153,26 @@ try {
 
 // Test 5 & 6: Revision cycle progression & Revision Required generates next revision
 try {
-  // Filming -> File Upload
-  createdEpisode = await completeFilmingStage(createdEpisode.id, producerUser);
+  // Verify Producer CANNOT confirm filming (must be Studio Operator or Admin)
+  let producerFilmingThrew = false;
+  try {
+    await completeFilmingStage(createdEpisode.id, producerUser);
+  } catch (e) {
+    producerFilmingThrew = true;
+  }
+  assert.strictEqual(producerFilmingThrew, true, 'Producer confirming filming must throw');
+
+  // Verify Editor CANNOT confirm filming
+  let editorFilmingThrew = false;
+  try {
+    await completeFilmingStage(createdEpisode.id, editorUser);
+  } catch (e) {
+    editorFilmingThrew = true;
+  }
+  assert.strictEqual(editorFilmingThrew, true, 'Editor confirming filming must throw');
+
+  // Filming -> File Upload (Studio Operator confirms)
+  createdEpisode = await completeFilmingStage(createdEpisode.id, studioUser);
   assert.strictEqual(createdEpisode.currentStage, 'FILES_UPLOADED');
 
   // File Upload -> Producer Package
@@ -624,13 +645,56 @@ try {
   console.error('✗ Test 16 Failed', err);
 }
 
+// Test 17: Filming schedule chronologically sorted by hour of filming (earliest on top)
+try {
+  // Test time parsing
+  assert.strictEqual(parseFilmingTimeToMinutes('09:00'), 540);
+  assert.strictEqual(parseFilmingTimeToMinutes('10:30'), 630);
+  assert.strictEqual(parseFilmingTimeToMinutes('14:00 - 16:30 IDT'), 840);
+  assert.strictEqual(parseFilmingTimeToMinutes('2:15 pm'), 855);
+  assert.strictEqual(parseFilmingTimeToMinutes(undefined), 99999);
+
+  // Test sorting by hour on the same day
+  const testShootsSameDay = [
+    { id: '1', title: 'Afternoon Shoot', filmingDate: '2026-09-15', filmingTime: '15:30' },
+    { id: '2', title: 'Morning Shoot', filmingDate: '2026-09-15', filmingTime: '09:00' },
+    { id: '3', title: 'Midday Shoot', filmingDate: '2026-09-15', filmingTime: '11:45' },
+    { id: '4', title: 'Early Afternoon Shoot', filmingDate: '2026-09-15', filmingTime: '13:00 - 15:00 IDT' },
+    { id: '5', title: 'Unspecified Time Shoot', filmingDate: '2026-09-15' },
+  ];
+
+  const sortedSameDay = sortProductionsByFilmingSchedule(testShootsSameDay);
+  assert.strictEqual(sortedSameDay[0].title, 'Morning Shoot', '09:00 must be earliest on top');
+  assert.strictEqual(sortedSameDay[1].title, 'Midday Shoot', '11:45 must be second');
+  assert.strictEqual(sortedSameDay[2].title, 'Early Afternoon Shoot', '13:00 must be third');
+  assert.strictEqual(sortedSameDay[3].title, 'Afternoon Shoot', '15:30 must be fourth');
+  assert.strictEqual(sortedSameDay[4].title, 'Unspecified Time Shoot', 'Unspecified time must be last');
+
+  // Test sorting across dates and hours
+  const testShootsMultiDay = [
+    { id: 'a', title: 'Tomorrow Morning', filmingDate: '2026-09-16', filmingTime: '08:30' },
+    { id: 'b', title: 'Today Late', filmingDate: '2026-09-15', filmingTime: '16:00' },
+    { id: 'c', title: 'Today Early', filmingDate: '2026-09-15', filmingTime: '10:00' },
+  ];
+
+  const sortedMultiDay = sortProductionsByFilmingSchedule(testShootsMultiDay);
+  assert.strictEqual(sortedMultiDay[0].title, 'Today Early', 'Today 10:00 must be first');
+  assert.strictEqual(sortedMultiDay[1].title, 'Today Late', 'Today 16:00 must be second');
+  assert.strictEqual(sortedMultiDay[2].title, 'Tomorrow Morning', 'Tomorrow 08:30 must follow Today');
+
+  console.log('✓ Test 17 Passed: Filming schedule chronologically sorted by hour of filming (earliest on top)');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 17 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 16 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 17 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 16) {
+if (testsPassed !== 17) {
   process.exit(1);
 }

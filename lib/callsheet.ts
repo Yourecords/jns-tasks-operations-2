@@ -1,6 +1,7 @@
 import { User, Production, ProductionTask } from './types';
 import { getDb, saveDb, getDbAsync, saveDbAsync, type DatabaseSchema } from './db';
 import { sendEmail } from './email';
+import { sortProductionsByFilmingSchedule } from './utils';
 
 export interface CallSheetItem {
   title: string;
@@ -51,9 +52,9 @@ export function generateUserCallSheet(user: User, targetDateStr?: string, custom
 
   // 1. FOR YURI (DIRECTOR / ADMIN): Executive Production Briefing
   if (isAdmin) {
-    // Shows & rentals recording today
-    const shootsToday = db.productions.filter(
-      (p) => p.status === 'ACTIVE' && p.filmingDate === today
+    // Shows & rentals recording today sorted by hour of filming (earliest on top)
+    const shootsToday = sortProductionsByFilmingSchedule(
+      db.productions.filter((p) => p.status === 'ACTIVE' && p.filmingDate === today)
     );
     if (shootsToday.length > 0) {
       sections.push({
@@ -139,9 +140,11 @@ export function generateUserCallSheet(user: User, targetDateStr?: string, custom
 
   // 2. FOR PRODUCERS (Zach, Barbara, etc.)
   if (isProducer && !isAdmin) {
-    // Filming schedule today
-    const myFilmingToday = db.productions.filter(
-      (p) => p.producerId === user.id && p.status === 'ACTIVE' && p.filmingDate === today
+    // Filming schedule today sorted by hour of filming (earliest on top)
+    const myFilmingToday = sortProductionsByFilmingSchedule(
+      db.productions.filter(
+        (p) => p.producerId === user.id && p.status === 'ACTIVE' && p.filmingDate === today
+      )
     );
     if (myFilmingToday.length > 0) {
       sections.push({
@@ -277,8 +280,12 @@ export function generateUserCallSheet(user: User, targetDateStr?: string, custom
 
   // 4. FOR STUDIO (Ahron)
   if (isStudio && !isAdmin) {
-    // Studio shoot times and rentals
-    const studioShoots = db.productions.filter((p) => p.status === 'ACTIVE' && (p.filmingDate === today || p.type === 'RENTAL'));
+    // Studio shoot times and rentals sorted by hour of filming (earliest on top)
+    const studioShoots = sortProductionsByFilmingSchedule(
+      db.productions.filter(
+        (p) => p.status === 'ACTIVE' && (p.filmingDate === today || p.type === 'RENTAL')
+      )
+    );
     if (studioShoots.length > 0) {
       sections.push({
         title: 'Studio Schedule & Shoot Times Today',

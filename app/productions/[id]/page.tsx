@@ -25,7 +25,8 @@ import {
   Link2,
   Trash2,
   CheckSquare,
-  X
+  X,
+  Lock
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, Comment, AuditLog, RevisionCycle } from '@/lib/types';
@@ -158,6 +159,11 @@ export default function ProductionDetailPage() {
 
   const isProducerOrAdmin =
     currentUser?.role === 'PRODUCER' || currentUser?.role === 'ADMIN';
+
+  const isStudioOrAdmin =
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.jobFunction === 'STUDIO_OPERATOR' ||
+    currentUser?.id === 'usr_ahron_studio';
 
   // Send workflow action
   const handleWorkflowAction = async (action: string, payload: any = {}) => {
@@ -496,9 +502,9 @@ export default function ProductionDetailPage() {
             {production.currentStage === 'FILMING' && (
               <div>
                 <p style={{ color: 'var(--text-light)', marginBottom: '1rem' }}>
-                  Filming is currently scheduled for <strong>{production.filmingDate || 'today'}{production.filmingTime ? ` at ${production.filmingTime}` : ''}</strong>. The Producer or Studio Operator confirms when recording wrap is achieved.
+                  Filming is currently scheduled for <strong>{production.filmingDate || 'today'}{production.filmingTime ? ` at ${production.filmingTime}` : ''}</strong>. Confirmation is restricted to a <strong>Studio Operator</strong> or <strong>Admin</strong> when recording wrap is achieved (Producers cannot confirm filming).
                 </p>
-                {isProducerOrAdmin ? (
+                {isStudioOrAdmin ? (
                   <button
                     className="btn btn-primary"
                     onClick={() => handleWorkflowAction('COMPLETE_FILMING')}
@@ -507,8 +513,9 @@ export default function ProductionDetailPage() {
                     <span>Confirm Filming Done & Advance to File Upload</span>
                   </button>
                 ) : (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                    Filming completion must be confirmed by the Producer ({getUserName(production.producerId)}).
+                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock size={13} color="var(--jns-gold)" />
+                    <span>Filming completion must be confirmed by a Studio Operator or Admin (Producers cannot confirm filming).</span>
                   </div>
                 )}
               </div>
