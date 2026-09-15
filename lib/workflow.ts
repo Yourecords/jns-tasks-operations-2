@@ -59,7 +59,6 @@ export function canUserPerform(
       case 'ACCESS_PRODUCTION_EMAIL':
       case 'CONVERT_PILOT':
         return true;
-      case 'CONFIRM_FILMING':
       case 'MANAGE_USERS':
       case 'MANAGE_SHOWS':
       case 'MANAGE_SETTINGS':
