@@ -82,6 +82,9 @@ export default function GearLogPage() {
   const [deleteItemLoading, setDeleteItemLoading] = useState(false);
   const [deleteItemError, setDeleteItemError] = useState('');
 
+  // Highlight newly added or modified item
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+
   const isAuthorized =
     currentUser?.role === 'ADMIN' ||
     currentUser?.jobFunction === 'STUDIO_OPERATOR' ||
@@ -175,7 +178,13 @@ export default function GearLogPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to remove item');
       setSuccessMsg(`Removed "${deleteItemTarget.name}" from studio inventory.`);
       setTimeout(() => setSuccessMsg(''), 4000);
+      const targetId = deleteItemTarget.id;
       setDeleteItemTarget(null);
+      if (data.gearInventory && Array.isArray(data.gearInventory)) {
+        setInventory(data.gearInventory);
+      } else {
+        setInventory((prev) => prev.filter((i) => i.id !== targetId));
+      }
       fetchGear();
     } catch (err: any) {
       setDeleteItemError(err.message);
@@ -234,6 +243,7 @@ export default function GearLogPage() {
       if (!res.ok) throw new Error(data.error);
 
       setSuccessMsg(data.message || 'Item added to inventory.');
+      setTimeout(() => setSuccessMsg(''), 5000);
       setIsAddItemModalOpen(false);
       setNewItemName('');
       setNewItemModel('');
@@ -241,6 +251,28 @@ export default function GearLogPage() {
       setNewItemBarcode('');
       setNewItemLocation('');
       setNewItemNotes('');
+
+      // 1. Immediately update local inventory state so item appears without delay
+      if (data.gearInventory && Array.isArray(data.gearInventory)) {
+        setInventory(data.gearInventory);
+      } else if (data.item) {
+        setInventory((prev) => [data.item, ...prev.filter((i) => i.id !== data.item.id)]);
+      }
+
+      // 2. Automatically switch to Equipment Inventory tab
+      setActiveTab('INVENTORY');
+
+      // 3. Clear filters so the newly added item is not filtered out
+      setCategoryFilter('ALL');
+      setStatusFilter('ALL');
+      setSearchQuery('');
+
+      // 4. Highlight the newly added item row
+      if (data.item?.id) {
+        setHighlightedItemId(data.item.id);
+        setTimeout(() => setHighlightedItemId(null), 5000);
+      }
+
       fetchGear();
     } catch (err: any) {
       alert(err.message);
@@ -614,7 +646,14 @@ export default function GearLogPage() {
                   </thead>
                   <tbody>
                     {filteredInventory.map((item) => (
-                      <tr key={item.id}>
+                      <tr
+                        key={item.id}
+                        style={
+                          highlightedItemId === item.id
+                            ? { backgroundColor: 'rgba(217, 119, 6, 0.18)', transition: 'background-color 0.5s ease' }
+                            : undefined
+                        }
+                      >
                         <td style={{ padding: '0.65rem 0.5rem' }}>
                           <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {item.name}

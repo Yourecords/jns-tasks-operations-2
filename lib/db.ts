@@ -1674,6 +1674,18 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
   if (process.env.DATABASE_URL) {
     const pgState = await loadStateFromPostgres();
     if (pgState && pgState.users && pgState.users.length > 0) {
+      let pgMutated = false;
+      if (!pgState.gearInventory || pgState.gearInventory.length === 0) {
+        pgState.gearInventory = SEED_GEAR_INVENTORY;
+        pgMutated = true;
+      }
+      if (!pgState.gearCheckouts) {
+        pgState.gearCheckouts = SEED_GEAR_CHECKOUTS;
+        pgMutated = true;
+      }
+      if (pgMutated) {
+        await saveStateToPostgres(pgState);
+      }
       globalThis.__jnsDbCache = pgState;
       return pgState;
     }

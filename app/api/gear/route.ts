@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!db.gearInventory) db.gearInventory = [];
-    db.gearInventory.push(newItem);
+    db.gearInventory.unshift(newItem);
     await saveDbAsync(db);
 
     await logAudit(undefined, user, 'ADD_GEAR_ITEM', `Added new equipment item: "${newItem.name}" (${newItem.category})`);
@@ -207,6 +207,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `Added "${newItem.name}" to studio inventory.`,
       item: newItem,
+      gearInventory: db.gearInventory,
     });
   }
 
@@ -243,6 +244,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `Removed "${item.name}" from equipment inventory.`,
       deletedId: id,
+      gearInventory: db.gearInventory,
     });
   }
 
@@ -296,6 +298,7 @@ export async function DELETE(req: NextRequest) {
     success: true,
     message: `Removed "${item.name}" from equipment inventory.`,
     deletedId: id,
+    gearInventory: db.gearInventory,
   });
 }
 

@@ -28,6 +28,7 @@ import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
 import { POST as postReset } from '../app/api/reset/route';
 import { GET as getTestWorkflow } from '../app/api/test-workflow/route';
 import { GET as getProductions } from '../app/api/productions/route';
+import { GET as getGear, POST as postGear, DELETE as deleteGear } from '../app/api/gear/route';
 import { middleware } from '../middleware';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
@@ -688,13 +689,79 @@ try {
   console.error('✗ Test 17 Failed', err);
 }
 
+// Test 18: Gear inventory item addition, unshifting to top, retrieval and deletion
+try {
+  // 1. Add gear item as Studio Operator / Admin
+  const addReq = new NextRequest('http://localhost:3000/api/gear', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': `jns_user_id=${adminUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'ADD_ITEM',
+      name: 'Sony FE 24-70mm f/2.8 GM II Lens',
+      category: 'Lens',
+      model: 'SEL2470GM2',
+      serialNumber: 'SN-TEST-9921',
+      barcode: 'JNS-LENS-99',
+      location: 'Studio Lens Locker',
+      condition: 'MINT',
+      notes: 'New production lens test',
+    }),
+  });
+
+  const addRes = await postGear(addReq);
+  assert.strictEqual(addRes.status, 200, 'Adding gear item should succeed');
+  const addData = await addRes.json();
+  assert.strictEqual(addData.success, true);
+  assert.strictEqual(addData.item.name, 'Sony FE 24-70mm f/2.8 GM II Lens');
+  assert.strictEqual(addData.gearInventory[0].id, addData.item.id, 'New item must be at index 0 (top of inventory)');
+
+  // 2. Query GET /api/gear to verify item appears in Equipment Inventory
+  const getReq = new NextRequest('http://localhost:3000/api/gear', {
+    method: 'GET',
+    headers: {
+      'Cookie': `jns_user_id=${adminUser.id}`,
+    },
+  });
+  const getRes = await getGear(getReq);
+  assert.strictEqual(getRes.status, 200);
+  const getData = await getRes.json();
+  const foundItem = getData.gearInventory.find((g) => g.id === addData.item.id);
+  assert(foundItem, 'Added gear item must appear in Equipment Inventory list');
+  assert.strictEqual(foundItem.name, 'Sony FE 24-70mm f/2.8 GM II Lens');
+  assert.strictEqual(getData.gearInventory[0].id, addData.item.id, 'Item must be first in list when fetched');
+
+  // 3. Delete item
+  const delReq = new NextRequest(`http://localhost:3000/api/gear?id=${addData.item.id}`, {
+    method: 'DELETE',
+    headers: {
+      'Cookie': `jns_user_id=${adminUser.id}`,
+    },
+  });
+  const delRes = await deleteGear(delReq);
+  assert.strictEqual(delRes.status, 200);
+
+  // 4. Verify item was removed from inventory
+  const getRes2 = await getGear(getReq);
+  const getData2 = await getRes2.json();
+  const foundAfterDelete = getData2.gearInventory.find((g) => g.id === addData.item.id);
+  assert.strictEqual(foundAfterDelete, undefined, 'Deleted gear item must no longer appear in inventory');
+
+  console.log('✓ Test 18 Passed: Gear inventory item added, unshifted to top, and verified in inventory list');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 18 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 17 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 18 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 17) {
+if (testsPassed !== 18) {
   process.exit(1);
 }

@@ -580,18 +580,50 @@ export async function loadStateFromPostgres(): Promise<DatabaseSchema | null> {
           createdAt: r.created_at?.toISOString?.() || r.created_at,
         }));
 
+        const snapshotState = snapshotRes.rows[0]?.state as DatabaseSchema | undefined;
+
         const productions: Production[] = prodsRes.rows.map((r) => r.data);
-        const comments: Comment[] = commentsRes.rows.map((r) => r.data);
-        const auditLogs: AuditLog[] = auditRes.rows.map((r) => r.data);
-        const meetings: Meeting[] = meetingsRes.rows.map((r) => r.data);
-        const improvements: Improvement[] = impRes.rows.map((r) => r.data);
-        const anonymousProblemReports: AnonymousProblemReport[] = probsRes.rows.map((r) => r.data);
-        const showIdeas: ShowIdea[] = ideasRes.rows.map((r) => r.data);
-        const equipmentRequests: EquipmentRequest[] = eqRes.rows.map((r) => r.data);
-        const gearInventory: GearItem[] = gearRes.rows.map((r) => r.data);
-        const gearCheckouts: GearCheckoutRecord[] = chkRes.rows.map((r) => r.data);
-        const notifications: InAppNotification[] = notifRes.rows.map((r) => r.data);
-        const systemSettings: SystemSettings = settingsRes.rows[0]?.data || (snapshotRes.rows[0]?.state?.systemSettings);
+        const comments: Comment[] =
+          commentsRes.rows.length > 0
+            ? commentsRes.rows.map((r) => r.data)
+            : (snapshotState?.comments || []);
+        const auditLogs: AuditLog[] =
+          auditRes.rows.length > 0
+            ? auditRes.rows.map((r) => r.data)
+            : (snapshotState?.auditLogs || []);
+        const meetings: Meeting[] =
+          meetingsRes.rows.length > 0
+            ? meetingsRes.rows.map((r) => r.data)
+            : (snapshotState?.meetings || []);
+        const improvements: Improvement[] =
+          impRes.rows.length > 0
+            ? impRes.rows.map((r) => r.data)
+            : (snapshotState?.improvements || []);
+        const anonymousProblemReports: AnonymousProblemReport[] =
+          probsRes.rows.length > 0
+            ? probsRes.rows.map((r) => r.data)
+            : (snapshotState?.anonymousProblemReports || []);
+        const showIdeas: ShowIdea[] =
+          ideasRes.rows.length > 0
+            ? ideasRes.rows.map((r) => r.data)
+            : (snapshotState?.showIdeas || []);
+        const equipmentRequests: EquipmentRequest[] =
+          eqRes.rows.length > 0
+            ? eqRes.rows.map((r) => r.data)
+            : (snapshotState?.equipmentRequests || []);
+        const gearInventory: GearItem[] =
+          gearRes.rows.length > 0
+            ? gearRes.rows.map((r) => r.data)
+            : (snapshotState?.gearInventory || []);
+        const gearCheckouts: GearCheckoutRecord[] =
+          chkRes.rows.length > 0
+            ? chkRes.rows.map((r) => r.data)
+            : (snapshotState?.gearCheckouts || []);
+        const notifications: InAppNotification[] =
+          notifRes.rows.length > 0
+            ? notifRes.rows.map((r) => r.data)
+            : (snapshotState?.notifications || []);
+        const systemSettings: SystemSettings = settingsRes.rows[0]?.data || (snapshotState?.systemSettings as any);
 
         return {
           users,
@@ -738,6 +770,164 @@ export async function saveStateToPostgres(state: DatabaseSchema): Promise<boolea
              updated_at = NOW()`,
           [JSON.stringify(state.systemSettings)]
         );
+      }
+
+      // 6. Sync gear_inventory row-level
+      if (Array.isArray(state.gearInventory)) {
+        const itemIds: string[] = [];
+        for (const item of state.gearInventory) {
+          if (!item.id) continue;
+          itemIds.push(item.id);
+          await client.query(
+            `INSERT INTO gear_inventory (id, name, category, status, data, updated_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             ON CONFLICT (id) DO UPDATE SET
+               name = EXCLUDED.name,
+               category = EXCLUDED.category,
+               status = EXCLUDED.status,
+               data = EXCLUDED.data,
+               updated_at = NOW()`,
+            [
+              item.id,
+              item.name,
+              item.category || null,
+              item.status || 'AVAILABLE',
+              JSON.stringify(item),
+            ]
+          );
+        }
+        if (itemIds.length > 0) {
+          await client.query(
+            `DELETE FROM gear_inventory WHERE id NOT IN (${itemIds.map((_, i) => `$${i + 1}`).join(', ')})`,
+            itemIds
+          );
+        } else {
+          await client.query('DELETE FROM gear_inventory');
+        }
+      }
+
+      // 7. Sync gear_checkouts row-level
+      if (Array.isArray(state.gearCheckouts)) {
+        for (const chk of state.gearCheckouts) {
+          if (!chk.id) continue;
+          await client.query(
+            `INSERT INTO gear_checkouts (id, gear_id, user_id, data, created_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE SET
+               gear_id = EXCLUDED.gear_id,
+               user_id = EXCLUDED.user_id,
+               data = EXCLUDED.data`,
+            [
+              chk.id,
+              chk.gearItemId || null,
+              chk.checkedOutToUserId || null,
+              JSON.stringify(chk),
+              chk.checkoutDate || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+
+      // 8. Sync comments row-level
+      if (Array.isArray(state.comments)) {
+        for (const c of state.comments) {
+          if (!c.id) continue;
+          await client.query(
+            `INSERT INTO comments (id, production_id, user_id, text, data, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (id) DO UPDATE SET
+               data = EXCLUDED.data`,
+            [
+              c.id,
+              c.productionId,
+              c.userId,
+              c.content,
+              JSON.stringify(c),
+              c.createdAt || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+
+      // 9. Sync meetings
+      if (Array.isArray(state.meetings)) {
+        for (const m of state.meetings) {
+          if (!m.id) continue;
+          await client.query(
+            `INSERT INTO meetings (id, date, data, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (id) DO UPDATE SET
+               date = EXCLUDED.date,
+               data = EXCLUDED.data,
+               updated_at = NOW()`,
+            [m.id, m.date || null, JSON.stringify(m)]
+          );
+        }
+      }
+
+      // 10. Sync improvements
+      if (Array.isArray(state.improvements)) {
+        for (const imp of state.improvements) {
+          if (!imp.id) continue;
+          await client.query(
+            `INSERT INTO improvements (id, title, status, data, created_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE SET
+               title = EXCLUDED.title,
+               status = EXCLUDED.status,
+               data = EXCLUDED.data`,
+            [imp.id, imp.title, imp.status || null, JSON.stringify(imp), imp.createdAt || new Date().toISOString()]
+          );
+        }
+      }
+
+      // 11. Sync problem_reports
+      if (Array.isArray(state.anonymousProblemReports)) {
+        for (const rep of state.anonymousProblemReports) {
+          if (!rep.id) continue;
+          await client.query(
+            `INSERT INTO problem_reports (id, title, status, data, created_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE SET
+               title = EXCLUDED.title,
+               status = EXCLUDED.status,
+               data = EXCLUDED.data`,
+            [rep.id, rep.title, rep.status || null, JSON.stringify(rep), rep.createdAt || new Date().toISOString()]
+          );
+        }
+      }
+
+      // 12. Sync show_ideas
+      if (Array.isArray(state.showIdeas)) {
+        for (const idea of state.showIdeas) {
+          if (!idea.id) continue;
+          await client.query(
+            `INSERT INTO show_ideas (id, title, status, data, created_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE SET
+               title = EXCLUDED.title,
+               status = EXCLUDED.status,
+               data = EXCLUDED.data`,
+            [idea.id, idea.showName, idea.status || null, JSON.stringify(idea), idea.createdAt || new Date().toISOString()]
+          );
+        }
+      }
+
+      // 13. Sync equipment_requests
+      if (Array.isArray(state.equipmentRequests)) {
+        for (const eq of state.equipmentRequests) {
+          if (!eq.id) continue;
+          await client.query(
+            `INSERT INTO equipment_requests (id, item_name, urgency, status, data, created_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE SET
+               item_name = EXCLUDED.item_name,
+               urgency = EXCLUDED.urgency,
+               status = EXCLUDED.status,
+               data = EXCLUDED.data`,
+            [eq.id, eq.itemName, eq.urgency || null, eq.status || null, JSON.stringify(eq), eq.createdAt || new Date().toISOString()]
+          );
+        }
       }
 
       return true;
