@@ -104,7 +104,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark" className="theme-dark" suppressHydrationWarning>
       <head>
         <title>JNS Video Production Task Management</title>
         <meta
@@ -133,7 +133,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body>
+      <body className="theme-dark" suppressHydrationWarning>
         <ThemeProvider>
           <UserProvider>
             <AppShell>{children}</AppShell>
