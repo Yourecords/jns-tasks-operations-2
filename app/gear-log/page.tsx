@@ -21,10 +21,13 @@ import {
   ExternalLink,
   RotateCcw,
   Trash2,
-  X
+  X,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { GearItem, GearCheckoutRecord, GearCategory, GearCondition } from '@/lib/types';
+import { exportGearInventoryToExcel } from '@/lib/excel-export';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
 
 const CATEGORIES: GearCategory[] = [
@@ -84,6 +87,7 @@ export default function GearLogPage() {
 
   // Highlight newly added or modified item
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const [isExportingGear, setIsExportingGear] = useState(false);
 
   const isAuthorized =
     currentUser?.role === 'ADMIN' ||
@@ -279,6 +283,23 @@ export default function GearLogPage() {
     }
   };
 
+  const handleExportGear = async () => {
+    setIsExportingGear(true);
+    try {
+      await exportGearInventoryToExcel({
+        includeInventory: true,
+        includeActiveLoans: true,
+        includeHistory: true,
+        inventory,
+        checkouts,
+      });
+    } catch (err: any) {
+      alert(`Export failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsExportingGear(false);
+    }
+  };
+
   if (!isAuthorized) {
     return (
       <div className="empty-state-box" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
@@ -344,6 +365,16 @@ export default function GearLogPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleExportGear}
+            disabled={isExportingGear || inventory.length === 0}
+            title="Export Equipment Registry and Loans to Excel (.xlsx)"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+          >
+            <Download size={14} />
+            <span>{isExportingGear ? 'Exporting...' : 'Export to Excel'}</span>
+          </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setIsAddItemModalOpen(true)}

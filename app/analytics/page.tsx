@@ -19,15 +19,32 @@ import {
   Mail,
   Zap,
   Check,
-  RefreshCw
+  RefreshCw,
+  Download,
+  FileSpreadsheet,
+  CheckSquare,
+  Square,
+  Filter,
+  X
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
-import { AnalyticsSummary, VelocityMetric, ProducerPerformance, EditorPerformance } from '@/lib/types';
+import { AnalyticsSummary, VelocityMetric, ProducerPerformance, EditorPerformance, Production, Show, User } from '@/lib/types';
 import { formatHours } from '@/lib/analytics';
+import {
+  exportAnalyticsToExcel,
+  DateRangePreset,
+  DateFilterBasis,
+  AnalyticsExportSections,
+  getDateRangeFromPreset,
+  filterProductionsByDateRange,
+} from '@/lib/excel-export';
 
 export default function AnalyticsPage() {
   const { currentUser, allUsers } = useUser();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [productionsData, setProductionsData] = useState<Production[]>([]);
+  const [showsData, setShowsData] = useState<Show[]>([]);
+  const [usersData, setUsersData] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'SHOWS' | 'PRODUCERS' | 'EDITORS' | 'CALLSHEET'>('SHOWS');
@@ -38,6 +55,21 @@ export default function AnalyticsPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<string | null>(null);
+
+  // Excel Export Modal state
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportPreset, setExportPreset] = useState<DateRangePreset>('ALL');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [exportDateBasis, setExportDateBasis] = useState<DateFilterBasis>('PUBLISHED');
+  const [exportSections, setExportSections] = useState<AnalyticsExportSections>({
+    summary: true,
+    shows: true,
+    producers: true,
+    editors: true,
+    ledger: true,
+  });
+  const [isExporting, setIsExporting] = useState(false);
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -56,6 +88,9 @@ export default function AnalyticsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSummary(data.summary);
+      if (data.productions) setProductionsData(data.productions);
+      if (data.shows) setShowsData(data.shows);
+      if (data.users) setUsersData(data.users);
       setErrorMsg('');
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to load analytics.');
@@ -132,6 +167,61 @@ export default function AnalyticsPage() {
 
   const overall = summary?.overallVelocity;
 
+  const handlePresetSelect = (preset: DateRangePreset) => {
+    setExportPreset(preset);
+    if (preset !== 'CUSTOM') {
+      const { start, end } = getDateRangeFromPreset(preset);
+      setExportStartDate(start);
+      setExportEndDate(end);
+    }
+  };
+
+  const handleToggleSection = (key: keyof AnalyticsExportSections) => {
+    setExportSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSelectAllSections = (val: boolean) => {
+    setExportSections({
+      summary: val,
+      shows: val,
+      producers: val,
+      editors: val,
+      ledger: val,
+    });
+  };
+
+  const matchingEpisodes = filterProductionsByDateRange(
+    productionsData,
+    exportStartDate,
+    exportEndDate,
+    exportDateBasis
+  );
+
+  const handleRunExport = async () => {
+    if (!Object.values(exportSections).some(Boolean)) {
+      alert('Please select at least one data section to include in the export.');
+      return;
+    }
+    setIsExporting(true);
+    try {
+      await exportAnalyticsToExcel({
+        preset: exportPreset,
+        startDate: exportStartDate,
+        endDate: exportEndDate,
+        dateBasis: exportDateBasis,
+        sections: exportSections,
+        productions: productionsData,
+        shows: showsData,
+        users: usersData,
+      });
+      setIsExportModalOpen(false);
+    } catch (err: any) {
+      alert(`Export failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="analytics-container">
       {/* Header */}
@@ -154,14 +244,24 @@ export default function AnalyticsPage() {
           </p>
         </div>
 
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={fetchAnalytics}
-          title="Recalculate metrics"
-        >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          <span>Refresh Metrics</span>
-        </button>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={fetchAnalytics}
+            title="Recalculate metrics"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh Metrics</span>
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setIsExportModalOpen(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Download size={14} />
+            <span>Export Report to Excel</span>
+          </button>
+        </div>
       </div>
 
       {errorMsg && (
@@ -645,6 +745,399 @@ export default function AnalyticsPage() {
                   No preview available.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXCEL EXPORT MODAL */}
+      {isExportModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setIsExportModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'var(--bg-card, #0f172a)',
+              border: '1px solid var(--border-color, #1e293b)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+              padding: '1.75rem',
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                  <FileSpreadsheet size={22} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                    Export Performance & Operations Report
+                  </h2>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                    Generate a styled Excel workbook (.xlsx) with filtered velocity and throughput data.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsExportModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Step 1: Time Window Filter */}
+            <div style={{ marginBottom: '1.5rem', backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color, #1e293b)', borderRadius: '10px', padding: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Calendar size={14} color="var(--jns-gold)" />
+                  1. Choose Time Period
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {exportStartDate && exportEndDate ? `${exportStartDate} to ${exportEndDate}` : 'All historic data'}
+                </span>
+              </div>
+
+              {/* Presets */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.85rem' }}>
+                {(
+                  [
+                    { id: 'ALL', label: 'All Time' },
+                    { id: '7D', label: 'Last 7 Days' },
+                    { id: '30D', label: 'Last 30 Days' },
+                    { id: '90D', label: 'Last 90 Days' },
+                    { id: 'THIS_MONTH', label: 'This Month' },
+                    { id: 'LAST_MONTH', label: 'Last Month' },
+                    { id: 'YTD', label: 'Year to Date' },
+                    { id: 'CUSTOM', label: 'Custom' },
+                  ] as const
+                ).map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handlePresetSelect(preset.id)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: exportPreset === preset.id ? '1px solid var(--jns-blue, #3b82f6)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      backgroundColor: exportPreset === preset.id ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                      color: exportPreset === preset.id ? '#60a5fa' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Date Pickers */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Start Date (From)
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    style={{ width: '100%', fontSize: '12px', padding: '6px 10px' }}
+                    value={exportStartDate}
+                    onChange={(e) => {
+                      setExportStartDate(e.target.value);
+                      setExportPreset('CUSTOM');
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    End Date (To)
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    style={{ width: '100%', fontSize: '12px', padding: '6px 10px' }}
+                    value={exportEndDate}
+                    onChange={(e) => {
+                      setExportEndDate(e.target.value);
+                      setExportPreset('CUSTOM');
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Date Basis Radio */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', paddingTop: '0.4rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Date Basis:</span>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-main)', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="dateBasis"
+                    checked={exportDateBasis === 'PUBLISHED'}
+                    onChange={() => setExportDateBasis('PUBLISHED')}
+                  />
+                  <span>Publication Date (Air / Delivery)</span>
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-main)', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="dateBasis"
+                    checked={exportDateBasis === 'FILMING'}
+                    onChange={() => setExportDateBasis('FILMING')}
+                  />
+                  <span>Filming Date (Shoot Day)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Step 2: Choose Data Sections (Checkboxes) */}
+            <div style={{ marginBottom: '1.5rem', backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color, #1e293b)', borderRadius: '10px', padding: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckSquare size={14} color="var(--jns-gold)" />
+                  2. Select Data Sections (Excel Sheets)
+                </span>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '11px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectAllSections(true)}
+                    style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', padding: 0 }}
+                  >
+                    Select All
+                  </button>
+                  <span style={{ color: 'var(--text-muted)' }}>•</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectAllSections(false)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {/* Section 1: Executive Summary */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: exportSections.summary ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                    border: '1px solid',
+                    borderColor: exportSections.summary ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={exportSections.summary}
+                    onChange={() => handleToggleSection('summary')}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      Executive Summary & Key Velocity KPIs
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Includes completed episodes count, M1 producer sign-off, M2 edit turnaround, and M3 total velocity averages.
+                    </div>
+                  </div>
+                </label>
+
+                {/* Section 2: Shows Breakdown */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: exportSections.shows ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                    border: '1px solid',
+                    borderColor: exportSections.shows ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={exportSections.shows}
+                    onChange={() => handleToggleSection('shows')}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      Show Velocity & Turnaround Breakdown
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Per-show episode volume, average hours from filming to air, and average editing speed.
+                    </div>
+                  </div>
+                </label>
+
+                {/* Section 3: Producer Performance */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: exportSections.producers ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                    border: '1px solid',
+                    borderColor: exportSections.producers ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={exportSections.producers}
+                    onChange={() => handleToggleSection('producers')}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      Producer Performance Metrics
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Episode volume managed by each producer and average turnaround for producer package sign-offs.
+                    </div>
+                  </div>
+                </label>
+
+                {/* Section 4: Editor Performance */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: exportSections.editors ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                    border: '1px solid',
+                    borderColor: exportSections.editors ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={exportSections.editors}
+                    onChange={() => handleToggleSection('editors')}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      Video Editor Throughput & Revision Quality
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Drafts completed, average edit speed, revision cycle rates, and first-pass approval health.
+                    </div>
+                  </div>
+                </label>
+
+                {/* Section 5: Episode Production Ledger */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: exportSections.ledger ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+                    border: '1px solid',
+                    borderColor: exportSections.ledger ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={exportSections.ledger}
+                    onChange={() => handleToggleSection('ledger')}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      Detailed Episode Production Ledger
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Row-by-row itemized sheet of every episode with dates, assigned crew, and exact stage turnaround hours.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Live Filter Count Pill */}
+            <div
+              style={{
+                marginBottom: '1.5rem',
+                padding: '0.65rem 0.85rem',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '12px',
+              }}
+            >
+              <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={14} />
+                {matchingEpisodes.length} episode{matchingEpisodes.length === 1 ? '' : 's'} match selected time window
+              </span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                {exportStartDate && exportEndDate ? `${exportStartDate} to ${exportEndDate}` : 'Full History'}
+              </span>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setIsExportModalOpen(false)}
+                disabled={isExporting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleRunExport}
+                disabled={isExporting || matchingEpisodes.length === 0}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#059669',
+                  borderColor: '#059669',
+                }}
+              >
+                <FileSpreadsheet size={14} />
+                <span>{isExporting ? 'Generating Excel...' : 'Download Excel (.xlsx)'}</span>
+              </button>
             </div>
           </div>
         </div>

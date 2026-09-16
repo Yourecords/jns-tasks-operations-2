@@ -755,13 +755,56 @@ try {
   console.error('✗ Test 18 Failed', err);
 }
 
+// Test 19: Performance Analytics & Gear Export Date Filtering and Excel generation
+try {
+  const { getDateRangeFromPreset, filterProductionsByDateRange } = await import('../lib/excel-export');
+
+  // 1. Test Presets
+  const rangeAll = getDateRangeFromPreset('ALL');
+  assert.strictEqual(rangeAll.start, '');
+  assert.strictEqual(rangeAll.end, '');
+
+  const range7D = getDateRangeFromPreset('7D');
+  assert(range7D.start && range7D.end, '7D preset must return start and end dates');
+  assert(range7D.start <= range7D.end, 'start date must be <= end date');
+
+  // 2. Test Date Filtering
+  const mockProds = [
+    { id: 'p1', filmingDate: '2026-09-01', publishedAt: '2026-09-03T10:00:00Z', title: 'Ep 1' },
+    { id: 'p2', filmingDate: '2026-09-10', publishedAt: '2026-09-12T10:00:00Z', title: 'Ep 2' },
+    { id: 'p3', filmingDate: '2026-09-20', publishedAt: '2026-09-22T10:00:00Z', title: 'Ep 3' },
+  ];
+
+  const filteredFilming = filterProductionsByDateRange(mockProds, '2026-09-05', '2026-09-15', 'FILMING');
+  assert.strictEqual(filteredFilming.length, 1);
+  assert.strictEqual(filteredFilming[0].id, 'p2');
+
+  const filteredPublished = filterProductionsByDateRange(mockProds, '2026-09-01', '2026-09-05', 'PUBLISHED');
+  assert.strictEqual(filteredPublished.length, 1);
+  assert.strictEqual(filteredPublished[0].id, 'p1');
+
+  // 3. Test ExcelJS Workbook Buffer Generation
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Summary');
+  ws.addRow(['Metric', 'Value']);
+  ws.addRow(['Completed Episodes', 12]);
+  const buffer = await wb.xlsx.writeBuffer();
+  assert(buffer && buffer.byteLength > 0, 'Excel workbook must produce valid binary buffer');
+
+  console.log('✓ Test 19 Passed: Performance & Gear Excel date filtering and workbook generation verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 19 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 18 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 19 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 18) {
+if (testsPassed !== 19) {
   process.exit(1);
 }

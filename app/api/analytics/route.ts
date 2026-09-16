@@ -20,5 +20,17 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     user: { id: user.id, name: user.name, role: user.role },
     summary,
+    productions: db.productions,
+    shows: db.shows,
+    users: db.users
+      .filter((u) => u.isActive)
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        fullName: u.fullName,
+        role: u.role,
+        jobFunction: u.jobFunction,
+        email: u.email,
+      })),
   });
 }
