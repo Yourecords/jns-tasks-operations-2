@@ -32,6 +32,7 @@ import {
   GearStatus,
   GearCondition,
   ChatMessage,
+  TaxiRide,
 } from './types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -53,6 +54,7 @@ export interface DatabaseSchema {
   gearInventory: GearItem[];
   gearCheckouts: GearCheckoutRecord[];
   chatMessages: ChatMessage[];
+  taxiRides: TaxiRide[];
 }
 
 // Initial seed users representing typical production personas
@@ -1872,6 +1874,95 @@ export function generateSeedChatMessages(): ChatMessage[] {
   ];
 }
 
+export const SEED_TAXI_RIDES: TaxiRide[] = [
+  {
+    id: 'ride_seed_001',
+    productionId: 'prod_the_quad_880',
+    productionTitle: 'The QUAD — Episode 880',
+    passengerName: 'Dr. Dan Schueftan',
+    passengerPhone: '+972-52-3344556',
+    passengerRole: 'GUEST',
+    pickupAddress: 'King David Hotel, King David St 23, Jerusalem',
+    dropoffAddress: 'JNS Studio, King George St / Jaffa St, Jerusalem',
+    direction: 'TO_STUDIO',
+    scheduledTime: '2026-09-17T13:15:00.000Z',
+    isImmediate: false,
+    vehicleType: 'REGULAR',
+    status: 'IN_TRANSIT',
+    estimatedPriceShekels: 65,
+    driver: {
+      name: 'Yossi Mizrahi',
+      phone: '+972-50-9988776',
+      carModel: 'White Skoda Octavia',
+      licensePlate: '34-567-89',
+      currentEtaMinutes: 7,
+    },
+    gettOrderId: 'gett_ord_90124',
+    trackingUrl: 'https://gett.app/track/ord_90124',
+    costCenter: 'The QUAD (Production)',
+    notes: 'Wait at main lobby entrance. Guest has briefing folder.',
+    orderedByUserId: 'usr_zach_producer',
+    orderedByUserName: 'Zach Sicherman',
+    createdAt: '2026-09-17T12:45:00.000Z',
+    updatedAt: '2026-09-17T13:08:00.000Z',
+  },
+  {
+    id: 'ride_seed_002',
+    productionId: 'prod_think_twice_101',
+    productionTitle: 'Think Twice — Episode 101',
+    passengerName: 'Col. Richard Kemp',
+    passengerPhone: '+972-54-1122334',
+    passengerRole: 'GUEST',
+    pickupAddress: 'Orient Hotel, Emek Refaim St 3, Jerusalem',
+    dropoffAddress: 'JNS Studio, King George St / Jaffa St, Jerusalem',
+    direction: 'TO_STUDIO',
+    scheduledTime: '2026-09-18T09:45:00.000Z',
+    isImmediate: false,
+    vehicleType: 'PREMIUM',
+    status: 'REQUESTED',
+    estimatedPriceShekels: 85,
+    gettOrderId: 'gett_ord_90125',
+    costCenter: 'Think Twice (Production)',
+    notes: 'International guest. English speaking driver preferred.',
+    orderedByUserId: 'usr_zach_producer',
+    orderedByUserName: 'Zach Sicherman',
+    createdAt: '2026-09-17T11:00:00.000Z',
+    updatedAt: '2026-09-17T11:00:00.000Z',
+  },
+  {
+    id: 'ride_seed_003',
+    productionId: 'prod_axis_of_truth_044',
+    productionTitle: 'Axis of Truth — Episode 044',
+    passengerName: 'Eylon Levy',
+    passengerPhone: '+972-50-6677889',
+    passengerRole: 'HOST',
+    pickupAddress: 'JNS Studio, King George St / Jaffa St, Jerusalem',
+    dropoffAddress: 'Ben Gurion Airport, Terminal 3',
+    direction: 'FROM_STUDIO',
+    scheduledTime: '2026-09-16T17:00:00.000Z',
+    isImmediate: false,
+    vehicleType: 'XL',
+    status: 'COMPLETED',
+    estimatedPriceShekels: 320,
+    actualPriceShekels: 315,
+    driver: {
+      name: 'Avi Levi',
+      phone: '+972-52-4455667',
+      carModel: 'Mercedes V-Class Van',
+      licensePlate: '12-345-67',
+      currentEtaMinutes: 0,
+    },
+    gettOrderId: 'gett_ord_88741',
+    trackingUrl: 'https://gett.app/track/ord_88741',
+    costCenter: 'Executive / Talent Travel',
+    notes: 'Airport transfer with 2 equipment flight cases.',
+    orderedByUserId: 'usr_yuri_admin',
+    orderedByUserName: 'Yuri (Admin)',
+    createdAt: '2026-09-16T15:30:00.000Z',
+    updatedAt: '2026-09-16T18:15:00.000Z',
+  },
+];
+
 export function getDb(): DatabaseSchema {
   if (globalThis.__jnsDbCache) {
     return globalThis.__jnsDbCache;
@@ -1901,6 +1992,7 @@ export function getDb(): DatabaseSchema {
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
       chatMessages: generateSeedChatMessages(),
+      taxiRides: SEED_TAXI_RIDES,
     };
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
@@ -1925,6 +2017,10 @@ export function getDb(): DatabaseSchema {
     }
     if (!parsed.chatMessages || parsed.chatMessages.length === 0) {
       parsed.chatMessages = generateSeedChatMessages();
+      mutated = true;
+    }
+    if (!parsed.taxiRides || parsed.taxiRides.length === 0) {
+      parsed.taxiRides = SEED_TAXI_RIDES;
       mutated = true;
     }
     if (parsed.systemSettings && (parsed.systemSettings.productionEmailUrl === 'mailto:production@jns.org' || parsed.systemSettings.productionEmailUrl === 'https://gmail.com')) {
@@ -1963,6 +2059,7 @@ export function getDb(): DatabaseSchema {
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
       chatMessages: generateSeedChatMessages(),
+      taxiRides: SEED_TAXI_RIDES,
     };
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(fallbackData, null, 2), 'utf-8');
@@ -2010,6 +2107,10 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
         pgState.chatMessages = generateSeedChatMessages();
         pgMutated = true;
       }
+      if (!pgState.taxiRides || pgState.taxiRides.length === 0) {
+        pgState.taxiRides = SEED_TAXI_RIDES;
+        pgMutated = true;
+      }
       if (pgMutated) {
         await saveStateToPostgres(pgState);
       }
@@ -2033,6 +2134,7 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
       chatMessages: generateSeedChatMessages(),
+      taxiRides: SEED_TAXI_RIDES,
     };
     await saveStateToPostgres(freshData);
     globalThis.__jnsDbCache = freshData;
@@ -2068,6 +2170,7 @@ export function resetToSeedData(): DatabaseSchema {
     gearInventory: SEED_GEAR_INVENTORY,
     gearCheckouts: SEED_GEAR_CHECKOUTS,
     chatMessages: generateSeedChatMessages(),
+    taxiRides: SEED_TAXI_RIDES,
   };
   saveDb(freshData);
   return freshData;

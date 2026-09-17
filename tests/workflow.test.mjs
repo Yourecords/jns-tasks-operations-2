@@ -34,6 +34,8 @@ import { GET as getProductions } from '../app/api/productions/route';
 import { PATCH as patchProduction } from '../app/api/productions/[id]/route';
 import { GET as getGear, POST as postGear, DELETE as deleteGear } from '../app/api/gear/route';
 import { GET as getMessages, POST as postMessages, PATCH as patchMessages } from '../app/api/messages/route';
+import { GET as getTaxis, POST as postTaxis } from '../app/api/taxis/route';
+import { PATCH as patchTaxi } from '../app/api/taxis/[id]/route';
 import { middleware } from '../middleware';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
@@ -1255,13 +1257,171 @@ try {
   console.error('✗ Test 23 Failed', err);
 }
 
+// Test 24: Gett Taxi Dispatch Module: Immediate dispatch, estimation, status progression & cancellation
+try {
+  // 1. Dispatch an immediate taxi for a guest via POST /api/taxis
+  const orderReq = new NextRequest('http://localhost:3000/api/taxis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      passengerName: 'Ambassador David Friedman',
+      passengerPhone: '+972-52-1112233',
+      passengerRole: 'GUEST',
+      pickupAddress: 'King David Hotel, King David St 23, Jerusalem',
+      dropoffAddress: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem',
+      direction: 'TO_STUDIO',
+      isImmediate: true,
+      vehicleType: 'REGULAR',
+      notes: 'VIP Guest for The QUAD interview.',
+      costCenter: 'The QUAD (Production)',
+    }),
+  });
+  const orderRes = await postTaxis(orderReq);
+  assert.strictEqual(orderRes.status, 201, 'Dispatching taxi must return 201');
+  const orderData = await orderRes.json();
+  assert(orderData.ride, 'Response must contain ride object');
+  assert.strictEqual(orderData.ride.passengerName, 'Ambassador David Friedman');
+  assert.strictEqual(orderData.ride.status, 'DISPATCHED', 'Immediate ride must have DISPATCHED status');
+  assert(orderData.ride.driver, 'Dispatched ride must have assigned driver');
+  assert(orderData.ride.driver.name, 'Driver must have a name');
+  assert(orderData.ride.driver.licensePlate, 'Driver must have a license plate');
+  assert(orderData.ride.gettOrderId.startsWith('gett_ord_'), 'Gett order ID must be generated');
+  assert(orderData.ride.estimatedPriceShekels > 0, 'Estimated price must be calculated');
+
+  const rideId = orderData.ride.id;
+
+  // 2. Query rides via GET /api/taxis
+  const getReq = new NextRequest('http://localhost:3000/api/taxis', {
+    headers: {
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+  });
+  const getRes = await getTaxis(getReq);
+  assert.strictEqual(getRes.status, 200, 'GET /api/taxis must return 200');
+  const getData = await getRes.json();
+  assert(getData.rides.some((r) => r.id === rideId), 'Rides list must include newly dispatched ride');
+  assert(getData.activeCount >= 1, 'Active count must be >= 1');
+
+  // 3. Status progression via PATCH /api/taxis/[id]
+  // Advance to ARRIVED
+  const arriveReq = new NextRequest(`http://localhost:3000/api/taxis/${rideId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'UPDATE_STATUS',
+      status: 'ARRIVED',
+    }),
+  });
+  const arriveRes = await patchTaxi(arriveReq, { params: { id: rideId } });
+  assert.strictEqual(arriveRes.status, 200, 'Updating status to ARRIVED must return 200');
+  const arriveData = await arriveRes.json();
+  assert.strictEqual(arriveData.ride.status, 'ARRIVED');
+
+  // Advance to IN_TRANSIT
+  const inTransitReq = new NextRequest(`http://localhost:3000/api/taxis/${rideId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'UPDATE_STATUS',
+      status: 'IN_TRANSIT',
+    }),
+  });
+  const inTransitRes = await patchTaxi(inTransitReq, { params: { id: rideId } });
+  assert.strictEqual(inTransitRes.status, 200);
+  const inTransitData = await inTransitRes.json();
+  assert.strictEqual(inTransitData.ride.status, 'IN_TRANSIT');
+
+  // Complete the ride
+  const completeReq = new NextRequest(`http://localhost:3000/api/taxis/${rideId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'UPDATE_STATUS',
+      status: 'COMPLETED',
+      actualPrice: 65,
+    }),
+  });
+  const completeRes = await patchTaxi(completeReq, { params: { id: rideId } });
+  assert.strictEqual(completeRes.status, 200);
+  const completeData = await completeRes.json();
+  assert.strictEqual(completeData.ride.status, 'COMPLETED');
+  assert.strictEqual(completeData.ride.actualPriceShekels, 65);
+
+  // 4. Create a scheduled taxi and test cancellation flow
+  const schedReq = new NextRequest('http://localhost:3000/api/taxis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      passengerName: 'Mark Regev',
+      passengerPhone: '+972-54-9998877',
+      passengerRole: 'GUEST',
+      pickupAddress: 'Orient Hotel, Emek Refaim St 3, Jerusalem',
+      dropoffAddress: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem',
+      direction: 'TO_STUDIO',
+      isImmediate: false,
+      scheduledTime: '2026-09-20T14:30:00.000Z',
+      vehicleType: 'PREMIUM',
+    }),
+  });
+  const schedRes = await postTaxis(schedReq);
+  assert.strictEqual(schedRes.status, 201);
+  const schedData = await schedRes.json();
+  assert.strictEqual(schedData.ride.status, 'REQUESTED', 'Scheduled ride must have REQUESTED status');
+  const schedRideId = schedData.ride.id;
+
+  // Cancel the scheduled ride
+  const cancelReq = new NextRequest(`http://localhost:3000/api/taxis/${schedRideId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'CANCEL_RIDE',
+      reason: 'Interview rescheduled to tomorrow',
+    }),
+  });
+  const cancelRes = await patchTaxi(cancelReq, { params: { id: schedRideId } });
+  assert.strictEqual(cancelRes.status, 200, 'Cancelling ride must return 200');
+  const cancelData = await cancelRes.json();
+  assert.strictEqual(cancelData.ride.status, 'CANCELLED');
+  assert(cancelData.ride.notes.includes('Interview rescheduled to tomorrow'));
+
+  // 5. Verify audit log entry exists
+  const currentDb = getDb();
+  const taxiAudit = currentDb.auditLogs.find(
+    (l) => l.action === 'ORDER_TAXI' && l.details.includes('Ambassador David Friedman')
+  );
+  assert(taxiAudit, 'Audit log must record taxi order action');
+
+  console.log('✓ Test 24 Passed: Gett Taxi Dispatch Module: Immediate dispatch, estimation, status progression & cancellation');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 24 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 23 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 24 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 23) {
+if (testsPassed !== 24) {
   process.exit(1);
 }

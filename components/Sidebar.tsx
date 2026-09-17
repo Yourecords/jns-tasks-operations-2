@@ -30,6 +30,7 @@ import {
   Sun,
   Moon,
   Eye,
+  Car,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
@@ -52,12 +53,25 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     overdue: 0,
     blocked: 0,
     waitingApproval: 0,
+    activeTaxis: 0,
   });
 
   const fetchBadges = async () => {
     try {
       const res = await fetch('/api/productions');
       const data = await res.json();
+      let activeTaxisCount = 0;
+
+      try {
+        const taxiRes = await fetch('/api/taxis');
+        if (taxiRes.ok) {
+          const taxiData = await taxiRes.json();
+          activeTaxisCount = taxiData.activeCount || 0;
+        }
+      } catch (e) {
+        // ignore taxi badge fetch error
+      }
+
       if (data.productions) {
         let myCount = 0;
         let overdueCount = 0;
@@ -93,6 +107,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
           overdue: overdueCount,
           blocked: blockedCount,
           waitingApproval: approvalCount,
+          activeTaxis: activeTaxisCount,
         });
       }
     } catch (err) {
@@ -123,6 +138,13 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     { label: 'Pilots', href: '/pilots', icon: Compass },
     { label: 'Studio Rentals', href: '/rentals', icon: Building2 },
     { label: 'Production Calendar', href: '/calendar', icon: Calendar },
+    {
+      label: 'Guest Taxis (Gett)',
+      href: '/taxis',
+      icon: Car,
+      badge: badgeCounts.activeTaxis > 0 ? badgeCounts.activeTaxis : undefined,
+      badgeClass: 'nav-badge-blue',
+    },
     {
       label: 'My Tasks',
       href: '/my-tasks',

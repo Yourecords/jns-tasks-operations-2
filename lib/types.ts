@@ -527,4 +527,50 @@ export interface ChatMessage {
   readBy?: string[]; // IDs of users who have read this message
 }
 
+// Gett Taxi Dispatch Interfaces
+export type TaxiStatus =
+  | 'REQUESTED'
+  | 'DISPATCHED'
+  | 'ARRIVED'
+  | 'IN_TRANSIT'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export type TaxiVehicleType = 'REGULAR' | 'XL' | 'PREMIUM';
+export type TaxiDirection = 'TO_STUDIO' | 'FROM_STUDIO' | 'CUSTOM';
+export type TaxiPassengerRole = 'GUEST' | 'HOST' | 'TEAM_MEMBER';
+
+export interface TaxiRide {
+  id: string;
+  productionId?: string;
+  productionTitle?: string;
+  passengerName: string;
+  passengerPhone: string;
+  passengerRole: TaxiPassengerRole;
+  pickupAddress: string;
+  dropoffAddress: string;
+  direction: TaxiDirection;
+  scheduledTime: string; // ISO string
+  isImmediate: boolean;
+  vehicleType: TaxiVehicleType;
+  status: TaxiStatus;
+  estimatedPriceShekels: number;
+  actualPriceShekels?: number;
+  driver?: {
+    name: string;
+    phone: string;
+    carModel: string;
+    licensePlate: string;
+    currentEtaMinutes?: number;
+  };
+  gettOrderId?: string;
+  trackingUrl?: string;
+  costCenter?: string;
+  notes?: string;
+  orderedByUserId: string;
+  orderedByUserName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
