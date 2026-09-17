@@ -30,6 +30,7 @@ import { POST as postReset } from '../app/api/reset/route';
 import { GET as getTestWorkflow } from '../app/api/test-workflow/route';
 import { GET as getProductions } from '../app/api/productions/route';
 import { GET as getGear, POST as postGear, DELETE as deleteGear } from '../app/api/gear/route';
+import { GET as getMessages, POST as postMessages, PATCH as patchMessages } from '../app/api/messages/route';
 import { middleware } from '../middleware';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
@@ -993,13 +994,117 @@ try {
   console.error('✗ Test 21 Failed', err);
 }
 
+// Test 22: In-app messaging floating dock: Team group chat, 1-on-1 private DMs, unread counts, and production reference attachment
+try {
+  // 1. Post a message to General Team channel
+  const teamMsgReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      channelType: 'TEAM',
+      content: 'Team, studio call time is moved up 15 minutes tomorrow.',
+    }),
+  });
+  const teamMsgRes = await postMessages(teamMsgReq);
+  assert.strictEqual(teamMsgRes.status, 201, 'Posting to team channel must return 201');
+  const teamMsgBody = await teamMsgRes.json();
+  assert(teamMsgBody.message.id, 'New team message must have an ID');
+  assert.strictEqual(teamMsgBody.message.channelType, 'TEAM');
+  assert.strictEqual(teamMsgBody.message.senderId, producerUser.id);
+
+  // 2. Fetch team messages from editor's perspective (should show unread for editor)
+  const getTeamReq = new NextRequest('http://localhost:3000/api/messages?channelType=TEAM', {
+    headers: {
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+  });
+  const getTeamRes = await getMessages(getTeamReq);
+  const getTeamBody = await getTeamRes.json();
+  assert(getTeamBody.messages.length > 0, 'Should return team messages');
+  assert(getTeamBody.teamUnreadCount >= 1, 'Editor should have at least 1 unread team message');
+
+  // 3. Send a private 1-on-1 Direct Message with production reference attachment
+  const sampleProd = db.productions[0];
+  const dmMsgReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      channelType: 'DIRECT',
+      recipientId: editorUser.id,
+      content: 'Can you check the lower thirds on this cut?',
+      productionId: sampleProd?.id,
+      productionTitle: sampleProd?.title,
+    }),
+  });
+  const dmMsgRes = await postMessages(dmMsgReq);
+  assert.strictEqual(dmMsgRes.status, 201, 'Sending private DM must return 201');
+  const dmMsgBody = await dmMsgRes.json();
+  assert.strictEqual(dmMsgBody.message.channelType, 'DIRECT');
+  assert.strictEqual(dmMsgBody.message.recipientId, editorUser.id);
+  assert.strictEqual(dmMsgBody.message.productionId, sampleProd?.id);
+
+  // 4. Verify in-app notification was generated for recipient of DM
+  const currentDb = getDb();
+  const dmNotif = currentDb.notifications.find(
+    (n) => n.userId === editorUser.id && n.title.includes(producerUser.name)
+  );
+  assert(dmNotif, 'Recipient of private DM must receive an in-app notification');
+
+  // 5. Query DM messages from recipient's perspective
+  const getDmReq = new NextRequest(`http://localhost:3000/api/messages?channelType=DIRECT&recipientId=${producerUser.id}`, {
+    headers: {
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+  });
+  const getDmRes = await getMessages(getDmReq);
+  const getDmBody = await getDmRes.json();
+  assert(getDmBody.messages.some((m) => m.id === dmMsgBody.message.id), 'DM thread must contain sent message');
+  assert(getDmBody.dmUnreadCounts[producerUser.id] >= 1, 'Unread DM count from producer must be >= 1');
+
+  // 6. Mark messages as read by recipient
+  const markReadReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({
+      channelType: 'DIRECT',
+      senderId: producerUser.id,
+    }),
+  });
+  const markReadRes = await patchMessages(markReadReq);
+  assert.strictEqual(markReadRes.status, 200, 'Marking read must return 200');
+
+  // 7. Verify unread count is cleared for editor
+  const getDmReqAfter = new NextRequest(`http://localhost:3000/api/messages?channelType=DIRECT&recipientId=${producerUser.id}`, {
+    headers: {
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+  });
+  const getDmResAfter = await getMessages(getDmReqAfter);
+  const getDmBodyAfter = await getDmResAfter.json();
+  assert.strictEqual(getDmBodyAfter.dmUnreadCounts[producerUser.id] || 0, 0, 'Unread count should be 0 after marking read');
+
+  console.log('✓ Test 22 Passed: In-app messaging floating dock: Team group chat, 1-on-1 private DMs, unread counts & attachments verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 22 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 21 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 22 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 21) {
+if (testsPassed !== 22) {
   process.exit(1);
 }

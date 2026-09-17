@@ -265,6 +265,7 @@ async function getFallbackDb(): Promise<DatabaseSchema> {
     notifications: [],
     gearInventory: [],
     gearCheckouts: [],
+    chatMessages: [],
   };
 }
 
@@ -640,6 +641,7 @@ export async function loadStateFromPostgres(): Promise<DatabaseSchema | null> {
           gearCheckouts,
           systemSettings: systemSettings || ({} as any),
           notifications,
+          chatMessages: (snapshotState as any)?.chatMessages || [],
         };
       }
 

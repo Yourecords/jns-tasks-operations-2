@@ -30,7 +30,8 @@ import {
   GearCheckoutRecord,
   GearCategory,
   GearStatus,
-  GearCondition
+  GearCondition,
+  ChatMessage,
 } from './types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -51,6 +52,7 @@ export interface DatabaseSchema {
   notifications: InAppNotification[];
   gearInventory: GearItem[];
   gearCheckouts: GearCheckoutRecord[];
+  chatMessages: ChatMessage[];
 }
 
 // Initial seed users representing typical production personas
@@ -1814,6 +1816,62 @@ declare global {
   var __jnsDbCache: DatabaseSchema | undefined;
 }
 
+export function generateSeedChatMessages(): ChatMessage[] {
+  const now = new Date();
+  const tMinus2h = new Date(now.getTime() - 2 * 3600 * 1000).toISOString();
+  const tMinus1h = new Date(now.getTime() - 1 * 3600 * 1000).toISOString();
+  const tMinus30m = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
+  const tMinus15m = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+
+  return [
+    {
+      id: 'msg_seed_1',
+      senderId: 'usr_ahron_studio',
+      senderName: 'Ahron',
+      senderRole: 'TEAM_MEMBER',
+      channelType: 'TEAM',
+      content: 'Jerusalem Studio A lighting grid and TVU transmitters tested and ready for filming today.',
+      createdAt: tMinus2h,
+      readBy: ['usr_ahron_studio', 'usr_yuri_admin'],
+    },
+    {
+      id: 'msg_seed_2',
+      senderId: 'usr_zach_producer',
+      senderName: 'Zach',
+      senderRole: 'PRODUCER',
+      channelType: 'TEAM',
+      content: 'Guest interviewees arriving for The Quad at 10:15. Please ensure remote backup line is open.',
+      productionId: 'prod_the_quad_134',
+      productionTitle: 'The Quad — Episode 134',
+      createdAt: tMinus1h,
+      readBy: ['usr_zach_producer', 'usr_yuri_admin'],
+    },
+    {
+      id: 'msg_seed_3',
+      senderId: 'usr_ryan_editor',
+      senderName: 'Ryan',
+      senderRole: 'TEAM_MEMBER',
+      channelType: 'TEAM',
+      content: 'Footage and graphics package synced on EditShare volume 1. Working on Draft 1 today.',
+      createdAt: tMinus30m,
+      readBy: ['usr_ryan_editor', 'usr_yuri_admin'],
+    },
+    {
+      id: 'msg_seed_4',
+      senderId: 'usr_zach_producer',
+      senderName: 'Zach',
+      senderRole: 'PRODUCER',
+      channelType: 'DIRECT',
+      recipientId: 'usr_yuri_admin',
+      content: 'Hey Yuri, could you please take a quick look at the producer package notes for Middle East Focus?',
+      productionId: 'prod_me_focus_89',
+      productionTitle: 'Middle East Focus — Episode 89',
+      createdAt: tMinus15m,
+      readBy: ['usr_zach_producer'],
+    },
+  ];
+}
+
 export function getDb(): DatabaseSchema {
   if (globalThis.__jnsDbCache) {
     return globalThis.__jnsDbCache;
@@ -1842,6 +1900,7 @@ export function getDb(): DatabaseSchema {
       notifications: SEED_NOTIFICATIONS,
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
+      chatMessages: generateSeedChatMessages(),
     };
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
@@ -1862,6 +1921,10 @@ export function getDb(): DatabaseSchema {
     }
     if (!parsed.gearCheckouts) {
       parsed.gearCheckouts = SEED_GEAR_CHECKOUTS;
+      mutated = true;
+    }
+    if (!parsed.chatMessages || parsed.chatMessages.length === 0) {
+      parsed.chatMessages = generateSeedChatMessages();
       mutated = true;
     }
     if (parsed.systemSettings && (parsed.systemSettings.productionEmailUrl === 'mailto:production@jns.org' || parsed.systemSettings.productionEmailUrl === 'https://gmail.com')) {
@@ -1899,6 +1962,7 @@ export function getDb(): DatabaseSchema {
       notifications: SEED_NOTIFICATIONS,
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
+      chatMessages: generateSeedChatMessages(),
     };
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(fallbackData, null, 2), 'utf-8');
@@ -1942,6 +2006,10 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
         pgState.gearCheckouts = SEED_GEAR_CHECKOUTS;
         pgMutated = true;
       }
+      if (!pgState.chatMessages || pgState.chatMessages.length === 0) {
+        pgState.chatMessages = generateSeedChatMessages();
+        pgMutated = true;
+      }
       if (pgMutated) {
         await saveStateToPostgres(pgState);
       }
@@ -1964,6 +2032,7 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
       notifications: SEED_NOTIFICATIONS,
       gearInventory: SEED_GEAR_INVENTORY,
       gearCheckouts: SEED_GEAR_CHECKOUTS,
+      chatMessages: generateSeedChatMessages(),
     };
     await saveStateToPostgres(freshData);
     globalThis.__jnsDbCache = freshData;
@@ -1998,6 +2067,7 @@ export function resetToSeedData(): DatabaseSchema {
     notifications: SEED_NOTIFICATIONS,
     gearInventory: SEED_GEAR_INVENTORY,
     gearCheckouts: SEED_GEAR_CHECKOUTS,
+    chatMessages: generateSeedChatMessages(),
   };
   saveDb(freshData);
   return freshData;

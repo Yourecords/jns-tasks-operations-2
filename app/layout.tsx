@@ -12,6 +12,7 @@ import QuickActionModal from '@/components/QuickActionModal';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import ViewAsBanner from '@/components/ViewAsBanner';
 import ViewAsModal from '@/components/ViewAsModal';
+import MessagingDock from '@/components/MessagingDock';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -104,6 +105,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           window.location.reload();
         }}
       />
+      <MessagingDock />
     </>
   );
 }

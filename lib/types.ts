@@ -508,3 +508,22 @@ export interface AnalyticsSummary {
   editors: EditorPerformance[];
 }
 
+// In-App Messaging Interfaces
+export type MessageChannelType = 'TEAM' | 'DIRECT';
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole?: UserRole;
+  senderAvatar?: string;
+  channelType: MessageChannelType;
+  recipientId?: string; // Required for DIRECT messages
+  content: string;
+  productionId?: string; // Optional attached production reference
+  productionTitle?: string;
+  createdAt: string;
+  readBy?: string[]; // IDs of users who have read this message
+}
+
+
