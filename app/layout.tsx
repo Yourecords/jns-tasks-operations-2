@@ -10,6 +10,8 @@ import TopNavbar from '@/components/TopNavbar';
 import SearchModal from '@/components/SearchModal';
 import QuickActionModal from '@/components/QuickActionModal';
 import MobileBottomNav from '@/components/MobileBottomNav';
+import ViewAsBanner from '@/components/ViewAsBanner';
+import ViewAsModal from '@/components/ViewAsModal';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,6 +20,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+  const [viewAsOpen, setViewAsOpen] = useState(false);
 
   const isLoginPage = pathname === '/login';
 
@@ -63,7 +66,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <div className="app-container">
-        <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+        <Sidebar
+          mobileOpen={mobileOpen}
+          setMobileOpen={setMobileOpen}
+          onOpenViewAs={() => setViewAsOpen(true)}
+        />
         {mobileOpen && (
           <div
             className="sidebar-backdrop"
@@ -72,10 +79,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
           />
         )}
         <div className="main-wrapper">
+          <ViewAsBanner onOpenSelector={() => setViewAsOpen(true)} />
           <TopNavbar
             onOpenMobileMenu={() => setMobileOpen(!mobileOpen)}
             onOpenSearch={() => setSearchOpen(true)}
             onOpenQuickAction={() => setQuickActionOpen(true)}
+            onOpenViewAs={() => setViewAsOpen(true)}
           />
           <main className="content-body">{children}</main>
         </div>
@@ -87,6 +96,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+      <ViewAsModal isOpen={viewAsOpen} onClose={() => setViewAsOpen(false)} />
       <QuickActionModal
         isOpen={quickActionOpen}
         onClose={() => setQuickActionOpen(false)}

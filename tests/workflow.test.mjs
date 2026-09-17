@@ -798,13 +798,64 @@ try {
   console.error('✗ Test 19 Failed', err);
 }
 
+// Test 20: Admin View-As user mode & permission controls
+try {
+  // 1. Admin switches to View-As Editor
+  const adminSwitchReq = new NextRequest('http://localhost:3000/api/auth/me', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${adminUser.id}`,
+    },
+    body: JSON.stringify({ userId: editorUser.id }),
+  });
+  const switchRes = await postAuthMe(adminSwitchReq);
+  assert.strictEqual(switchRes.status, 200, 'Admin should be able to switch to View-As mode');
+  const switchBody = await switchRes.json();
+  assert.strictEqual(switchBody.isImpersonating, true);
+  assert.strictEqual(switchBody.user.id, editorUser.id);
+  assert.strictEqual(switchBody.user.isImpersonated, true);
+  assert.strictEqual(switchBody.realUser.id, adminUser.id);
+
+  // 2. GET /api/auth/me reflects the active impersonation
+  const viewAsGetReq = new NextRequest('http://localhost:3000/api/auth/me', {
+    headers: {
+      cookie: `jns_user_id=${adminUser.id}; jns_impersonate_user_id=${editorUser.id}`,
+    },
+  });
+  const meViewAsRes = await getAuthMe(viewAsGetReq);
+  const meViewAsBody = await meViewAsRes.json();
+  assert.strictEqual(meViewAsBody.isImpersonating, true);
+  assert.strictEqual(meViewAsBody.user.id, editorUser.id);
+  assert.strictEqual(meViewAsBody.realUser.id, adminUser.id);
+
+  // 3. Admin exits View-As mode back to Admin
+  const exitReq = new NextRequest('http://localhost:3000/api/auth/me', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${adminUser.id}; jns_impersonate_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({ userId: adminUser.id }),
+  });
+  const exitRes = await postAuthMe(exitReq);
+  const exitBody = await exitRes.json();
+  assert.strictEqual(exitBody.isImpersonating, false);
+  assert.strictEqual(exitBody.user.id, adminUser.id);
+
+  console.log('✓ Test 20 Passed: Admin View-As user mode, perspective switching & exit back to admin verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 20 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 19 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 20 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 19) {
+if (testsPassed !== 20) {
   process.exit(1);
 }

@@ -22,13 +22,14 @@ import {
   Trash2,
   Pencil,
   Sliders,
+  Eye,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { User, Show, UserRole, JobFunction, ShowStatus, MemberType, AutomatedEmailAlertSettings } from '@/lib/types';
 import { isEligibleEditor } from '@/lib/utils';
 
 export default function AdminSettingsPage() {
-  const { currentUser, allUsers, refreshUser, settings, refreshSettings } = useUser();
+  const { currentUser, allUsers, refreshUser, switchUser, settings, refreshSettings } = useUser();
   const [activeTab, setActiveTab] = useState<'USERS' | 'SHOWS' | 'LINKS' | 'EMAIL'>('USERS');
 
   // Add user modal state
@@ -665,6 +666,28 @@ export default function AdminSettingsPage() {
                         <span className="status-chip status-approved">ACTIVE</span>
                       </td>
                       <td style={{ textAlign: 'right' }}>
+                        {u.id !== currentUser?.id && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-xs"
+                            onClick={() => switchUser(u.id)}
+                            title={`View site as ${u.name}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              color: 'var(--jns-gold)',
+                              borderColor: 'rgba(229, 169, 60, 0.4)',
+                              backgroundColor: 'rgba(229, 169, 60, 0.08)',
+                              marginRight: '6px',
+                              padding: '3px 8px',
+                            }}
+                          >
+                            <Eye size={12} />
+                            <span>View As</span>
+                          </button>
+                        )}
                         {u.id === 'usr_yuri_admin' ? (
                           <span
                             style={{

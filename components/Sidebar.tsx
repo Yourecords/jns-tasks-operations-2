@@ -29,6 +29,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  Eye,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
@@ -38,11 +39,12 @@ import UpdateScheduleModal from './UpdateScheduleModal';
 interface SidebarProps {
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
+  onOpenViewAs?: () => void;
 }
 
-export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
+export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: SidebarProps) {
   const pathname = usePathname();
-  const { currentUser, logout, settings, refreshSettings } = useUser();
+  const { currentUser, canImpersonate, isImpersonating, logout, settings, refreshSettings } = useUser();
   const { theme, toggleTheme } = useTheme();
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [badgeCounts, setBadgeCounts] = useState({
@@ -334,6 +336,35 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
             )}
           </button>
         </div>
+
+        {/* View Site As Option (Admin Only) */}
+        {canImpersonate && onOpenViewAs && (
+          <button
+            type="button"
+            onClick={onOpenViewAs}
+            title="View site from any team member's perspective"
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '6px 10px',
+              marginBottom: '0.65rem',
+              borderRadius: 'var(--radius-md)',
+              border: isImpersonating ? '1px solid #f59e0b' : '1px solid var(--border-subtle)',
+              backgroundColor: isImpersonating ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-card-subtle)',
+              color: isImpersonating ? '#fbbf24' : 'var(--text-light)',
+              fontSize: '11.5px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Eye size={13} color={isImpersonating ? '#fbbf24' : 'var(--jns-gold)'} />
+            <span>{isImpersonating ? `Switch View (${currentUser?.name?.split(' ')[0]})` : 'View Site As User...'}</span>
+          </button>
+        )}
 
         <div className="user-persona-box" style={{ cursor: 'default' }}>
           <div className="user-persona-info">

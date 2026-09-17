@@ -24,6 +24,13 @@ export interface User {
   isActive: boolean;
   avatarUrl?: string;
   createdAt: string;
+  isImpersonated?: boolean;
+  realUser?: {
+    id: string;
+    name: string;
+    role: UserRole;
+    email: string;
+  };
 }
 
 export type ShowStatus = 'ACTIVE' | 'PAUSED' | 'ARCHIVED';

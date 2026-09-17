@@ -16,6 +16,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  Eye,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
@@ -25,14 +26,16 @@ interface TopNavbarProps {
   onOpenMobileMenu: () => void;
   onOpenSearch: () => void;
   onOpenQuickAction: () => void;
+  onOpenViewAs?: () => void;
 }
 
 export default function TopNavbar({
   onOpenMobileMenu,
   onOpenSearch,
   onOpenQuickAction,
+  onOpenViewAs,
 }: TopNavbarProps) {
-  const { currentUser, settings, logout } = useUser();
+  const { currentUser, canImpersonate, isImpersonating, settings, logout } = useUser();
   const { theme, toggleTheme } = useTheme();
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [showNotifPopover, setShowNotifPopover] = useState(false);
@@ -260,6 +263,31 @@ export default function TopNavbar({
             </div>
           )}
         </div>
+
+        {/* View Site As Selector (Admin Only) */}
+        {canImpersonate && onOpenViewAs && (
+          <button
+            type="button"
+            className={`btn btn-secondary btn-sm ${isImpersonating ? 'nav-view-as-active' : ''}`}
+            onClick={onOpenViewAs}
+            title={isImpersonating ? `Currently viewing as ${currentUser?.name}. Click to switch or exit.` : "View site as any team member (Simulation Mode)"}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: '11px',
+              fontWeight: 600,
+              backgroundColor: isImpersonating ? 'rgba(245, 158, 11, 0.18)' : undefined,
+              borderColor: isImpersonating ? '#f59e0b' : undefined,
+              color: isImpersonating ? '#fbbf24' : undefined,
+            }}
+          >
+            <Eye size={13} color={isImpersonating ? '#fbbf24' : 'var(--jns-gold)'} />
+            <span className="reset-demo-text">
+              {isImpersonating ? `Viewing: ${currentUser?.name?.split(' ')[0]}` : 'View As...'}
+            </span>
+          </button>
+        )}
 
         {/* Theme Switcher Toggle */}
         <button
