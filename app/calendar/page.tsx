@@ -2117,9 +2117,6 @@ export default function ProductionCalendarPage() {
                             Studio
                           </span>
                         </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                          In-Studio & Hybrid Guests
-                        </div>
                       </th>
 
                       {/* REMOTE FILMING COLUMN */}
