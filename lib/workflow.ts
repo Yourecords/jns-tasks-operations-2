@@ -14,11 +14,13 @@ import {
   EpisodeWorkflowStage,
   RentalWorkflowStage,
   Priority,
-  TaskStatus
+  TaskStatus,
+  RecordingType,
 } from './types';
 import { getDb, saveDb, countWords, getDbAsync, saveDbAsync } from './db';
 import { updateProductionWithLock, insertProductionWithLock, deleteProductionWithLock, insertAuditLogWithLock, insertNotificationWithLock } from './pg';
 import { dispatchWorkflowEmail } from './email';
+import { findStudioConflict, requiresStudio } from './utils';
 
 // RBAC helper utilities
 export function canUserPerform(
@@ -138,6 +140,9 @@ export async function createNewEpisode(
     episodeNumber: string;
     filmingDate: string;
     filmingTime?: string;
+    location?: RecordingType | 'STUDIO' | 'REMOTE';
+    editingDate?: string;
+    editingTime?: string;
     editingDeadline?: string;
     publicationDeadline?: string;
     priority: Priority;
@@ -155,6 +160,14 @@ export async function createNewEpisode(
   const db = await getDbAsync();
   const show = db.shows.find((s) => s.id === data.showId);
   if (!show) throw new Error('Show not found.');
+
+  const location = data.location || 'IN_STUDIO';
+  if (data.filmingDate && data.filmingTime && requiresStudio(location)) {
+    const conflict = findStudioConflict(db.productions, data.filmingDate, data.filmingTime, location);
+    if (conflict.hasConflict) {
+      throw new Error(conflict.reason);
+    }
+  }
 
   const prodId = `prod_${data.showId.replace('show_', '')}_${data.episodeNumber}`;
   const title = `${show.name} — Episode ${data.episodeNumber}`;
@@ -175,6 +188,13 @@ export async function createNewEpisode(
     updatedAt: new Date().toISOString(),
   };
 
+  const resolvedRecordingType: RecordingType =
+    location === 'IN_STUDIO' || location === 'STUDIO_REMOTE_GUEST' || location === 'FULLY_REMOTE'
+      ? location
+      : location === 'REMOTE'
+      ? 'FULLY_REMOTE'
+      : 'IN_STUDIO';
+
   const newProd: Production = {
     id: prodId,
     type: 'EPISODE',
@@ -186,6 +206,10 @@ export async function createNewEpisode(
     currentStage: 'FILMING',
     filmingDate: data.filmingDate,
     filmingTime: data.filmingTime,
+    location,
+    recordingType: resolvedRecordingType,
+    editingDate: data.editingDate,
+    editingTime: data.editingTime,
     editingDeadline: data.editingDeadline,
     publicationDeadline: data.publicationDeadline,
     createdById: user.id,
@@ -243,6 +267,9 @@ export async function createNewPilot(
     conceptSummary: string;
     filmingDate: string;
     filmingTime?: string;
+    location?: RecordingType | 'STUDIO' | 'REMOTE';
+    editingDate?: string;
+    editingTime?: string;
     editingDeadline?: string;
     publicationDeadline?: string;
     priority: Priority;
@@ -257,6 +284,15 @@ export async function createNewPilot(
   }
 
   const db = await getDbAsync();
+
+  const location = data.location || 'IN_STUDIO';
+  if (data.filmingDate && data.filmingTime && requiresStudio(location)) {
+    const conflict = findStudioConflict(db.productions, data.filmingDate, data.filmingTime, location);
+    if (conflict.hasConflict) {
+      throw new Error(conflict.reason);
+    }
+  }
+
   const prodId = `pilot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   const pilotTask: ProductionTask = {
@@ -272,6 +308,13 @@ export async function createNewPilot(
     updatedAt: new Date().toISOString(),
   };
 
+  const resolvedRecordingType: RecordingType =
+    location === 'IN_STUDIO' || location === 'STUDIO_REMOTE_GUEST' || location === 'FULLY_REMOTE'
+      ? location
+      : location === 'REMOTE'
+      ? 'FULLY_REMOTE'
+      : 'IN_STUDIO';
+
   const newPilot: Production = {
     id: prodId,
     type: 'PILOT',
@@ -281,6 +324,10 @@ export async function createNewPilot(
     currentStage: 'FILMING',
     filmingDate: data.filmingDate,
     filmingTime: data.filmingTime,
+    location,
+    recordingType: resolvedRecordingType,
+    editingDate: data.editingDate,
+    editingTime: data.editingTime,
     editingDeadline: data.editingDeadline,
     publicationDeadline: data.publicationDeadline,
     createdById: user.id,
@@ -355,6 +402,14 @@ export async function createNewRental(
   }
 
   const db = await getDbAsync();
+
+  if (data.recordingDate && data.recordingTime) {
+    const conflict = findStudioConflict(db.productions, data.recordingDate, data.recordingTime, 'STUDIO');
+    if (conflict.hasConflict) {
+      throw new Error(conflict.reason);
+    }
+  }
+
   const prodId = `rental_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const title = `Studio Rental: ${data.clientName} — ${data.projectName}`;
 
@@ -379,6 +434,8 @@ export async function createNewRental(
     priority: data.priority || 'NORMAL',
     currentStage: 'RENTAL_SCHEDULED',
     filmingDate: data.recordingDate,
+    filmingTime: data.recordingTime,
+    location: 'STUDIO',
     createdById: user.id,
     producerId: data.producerId,
     createdAt: new Date().toISOString(),

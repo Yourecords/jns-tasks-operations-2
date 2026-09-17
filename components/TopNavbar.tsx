@@ -135,17 +135,15 @@ export default function TopNavbar({
           <span className="quick-action-text">Quick Action</span>
         </button>
 
-        {/* Schedule direct link */}
-        <a
-          href={scheduleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Production Calendar link */}
+        <Link
+          href="/calendar"
           className="btn btn-secondary btn-sm nav-tool-shortcut"
-          title="Open JNS Production Schedule in a new tab"
+          title="Open JNS Production Calendar"
         >
           <Calendar size={14} color="var(--jns-gold)" />
-          <span style={{ display: 'none', minWidth: '60px' }}>Schedule</span>
-        </a>
+          <span style={{ display: 'none', minWidth: '60px' }}>Calendar</span>
+        </Link>
 
         {/* Production Email direct link */}
         {canSeeEmail && (

@@ -14,7 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { useUser } from './UserContext';
-import { countWords, isEligibleEditor } from '@/lib/utils';
+import { countWords, isEligibleEditor, findStudioConflict } from '@/lib/utils';
 import { EquipmentPurchaseType } from '@/lib/types';
 
 interface QuickActionModalProps {
@@ -33,6 +33,7 @@ export default function QuickActionModal({
   const { currentUser, allUsers } = useUser();
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [shows, setShows] = useState<any[]>([]);
+  const [existingProductions, setExistingProductions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -43,6 +44,7 @@ export default function QuickActionModal({
   const [epNumber, setEpNumber] = useState('');
   const [epFilmingDate, setEpFilmingDate] = useState(new Date().toISOString().split('T')[0]);
   const [epFilmingTime, setEpFilmingTime] = useState('10:00');
+  const [epLocation, setEpLocation] = useState<'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE'>('IN_STUDIO');
   const [epEditingDeadline, setEpEditingDeadline] = useState('');
   const [epPubDeadline, setEpPubDeadline] = useState('');
   const [epPriority, setEpPriority] = useState('NORMAL');
@@ -54,6 +56,7 @@ export default function QuickActionModal({
   const [pilotConcept, setPilotConcept] = useState('');
   const [pilotFilmingDate, setPilotFilmingDate] = useState(new Date().toISOString().split('T')[0]);
   const [pilotFilmingTime, setPilotFilmingTime] = useState('10:00');
+  const [pilotLocation, setPilotLocation] = useState<'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE'>('IN_STUDIO');
   const [pilotPriority, setPilotPriority] = useState('NORMAL');
   const [pilotProducerId, setPilotProducerId] = useState('');
   const [pilotEditorId, setPilotEditorId] = useState('');
@@ -149,6 +152,13 @@ export default function QuickActionModal({
           }
         }
       });
+    fetch('/api/productions')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.productions) {
+          setExistingProductions(data.productions);
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -159,11 +169,28 @@ export default function QuickActionModal({
     }
   }, [currentUser]);
 
+  // Real-time Studio Conflict Detection
+  const epConflict = React.useMemo(() => {
+    return findStudioConflict(existingProductions, epFilmingDate, epFilmingTime, epLocation);
+  }, [existingProductions, epFilmingDate, epFilmingTime, epLocation]);
+
+  const pilotConflict = React.useMemo(() => {
+    return findStudioConflict(existingProductions, pilotFilmingDate, pilotFilmingTime, pilotLocation);
+  }, [existingProductions, pilotFilmingDate, pilotFilmingTime, pilotLocation]);
+
+  const rentalConflict = React.useMemo(() => {
+    return findStudioConflict(existingProductions, rentalDate, rentalTime, 'STUDIO');
+  }, [existingProductions, rentalDate, rentalTime]);
+
   if (!isOpen) return null;
 
   const handleCreateEpisode = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    if (epConflict.hasConflict) {
+      setErrorMsg(epConflict.reason || 'Studio conflict detected');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/productions', {
@@ -175,6 +202,8 @@ export default function QuickActionModal({
           episodeNumber: epNumber,
           filmingDate: epFilmingDate,
           filmingTime: epFilmingTime || undefined,
+          location: epLocation,
+          recordingType: epLocation,
           editingDeadline: epEditingDeadline || undefined,
           publicationDeadline: epPubDeadline || undefined,
           priority: epPriority,
@@ -199,6 +228,10 @@ export default function QuickActionModal({
   const handleCreatePilot = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    if (pilotConflict.hasConflict) {
+      setErrorMsg(pilotConflict.reason || 'Studio conflict detected');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/productions', {
@@ -210,6 +243,8 @@ export default function QuickActionModal({
           conceptSummary: pilotConcept,
           filmingDate: pilotFilmingDate,
           filmingTime: pilotFilmingTime || undefined,
+          location: pilotLocation,
+          recordingType: pilotLocation,
           priority: pilotPriority,
           producerId: pilotProducerId,
           editorId: pilotEditorId || undefined,
@@ -232,6 +267,10 @@ export default function QuickActionModal({
   const handleCreateRental = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    if (rentalConflict.hasConflict) {
+      setErrorMsg(rentalConflict.reason || 'Studio conflict detected');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/productions', {
@@ -550,7 +589,7 @@ export default function QuickActionModal({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">
                     Filming Date <span className="req">*</span>
@@ -577,6 +616,19 @@ export default function QuickActionModal({
                 </div>
 
                 <div className="form-group">
+                  <label className="form-label">Recording Setup</label>
+                  <select
+                    className="form-select"
+                    value={epLocation}
+                    onChange={(e) => setEpLocation(e.target.value as any)}
+                  >
+                    <option value="IN_STUDIO">In studio recording</option>
+                    <option value="STUDIO_REMOTE_GUEST">Studio + remote interviewee</option>
+                    <option value="FULLY_REMOTE">Fully remote recording</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
                   <label className="form-label">Editing Deadline</label>
                   <input
                     type="date"
@@ -596,6 +648,27 @@ export default function QuickActionModal({
                   />
                 </div>
               </div>
+
+              {epConflict.hasConflict && (
+                <div
+                  style={{
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                  }}
+                >
+                  <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <strong style={{ color: '#f87171' }}>Studio Conflict Detected:</strong> {epConflict.reason}
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
@@ -695,7 +768,7 @@ export default function QuickActionModal({
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">
                     Filming Date <span className="req">*</span>
@@ -720,7 +793,41 @@ export default function QuickActionModal({
                     onChange={(e) => setPilotFilmingTime(e.target.value)}
                   />
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label">Recording Setup</label>
+                  <select
+                    className="form-select"
+                    value={pilotLocation}
+                    onChange={(e) => setPilotLocation(e.target.value as any)}
+                  >
+                    <option value="IN_STUDIO">In studio recording</option>
+                    <option value="STUDIO_REMOTE_GUEST">Studio + remote interviewee</option>
+                    <option value="FULLY_REMOTE">Fully remote recording</option>
+                  </select>
+                </div>
               </div>
+
+              {pilotConflict.hasConflict && (
+                <div
+                  style={{
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                  }}
+                >
+                  <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <strong style={{ color: '#f87171' }}>Studio Conflict Detected:</strong> {pilotConflict.reason}
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
@@ -868,6 +975,27 @@ export default function QuickActionModal({
                   />
                 </div>
               </div>
+
+              {rentalConflict.hasConflict && (
+                <div
+                  style={{
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                  }}
+                >
+                  <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <strong style={{ color: '#f87171' }}>Studio Conflict Detected:</strong> {rentalConflict.reason}
+                  </div>
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Studio Setup / Transmission Type</label>

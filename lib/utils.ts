@@ -82,3 +82,140 @@ export function sortProductionsByFilmingSchedule<T extends { filmingDate?: strin
   });
 }
 
+export interface TimeRangeMinutes {
+  startMinutes: number;
+  endMinutes: number;
+}
+
+/**
+ * Parses a time or time range string (e.g. "10:30", "14:00 - 16:30 IDT")
+ * into minute bounds from midnight.
+ */
+export function parseTimeRangeToMinutes(
+  timeStr?: string,
+  defaultDurationMinutes: number = 60
+): TimeRangeMinutes | null {
+  if (!timeStr || typeof timeStr !== 'string' || !timeStr.trim()) {
+    return null;
+  }
+
+  const clean = timeStr.trim();
+  // Pattern: "14:00 - 16:30", "10:00-11:30 IDT", "10:00 to 11:30"
+  const rangeMatch = clean.match(/(\d{1,2}):(\d{2})\s*(?:am|pm)?\s*[-–—to]+\s*(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+  if (rangeMatch) {
+    let startH = parseInt(rangeMatch[1], 10);
+    const startM = parseInt(rangeMatch[2], 10);
+    let endH = parseInt(rangeMatch[3], 10);
+    const endM = parseInt(rangeMatch[4], 10);
+    const endAmPm = rangeMatch[5]?.toLowerCase();
+
+    if (endAmPm === 'pm' && endH < 12) endH += 12;
+    if (endAmPm === 'am' && endH === 12) endH = 0;
+    if (endAmPm === 'pm' && startH < 12 && startH <= endH - 12) {
+      startH += 12;
+    }
+
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    return {
+      startMinutes,
+      endMinutes: Math.max(endMinutes, startMinutes + 15),
+    };
+  }
+
+  const startMinutes = parseFilmingTimeToMinutes(timeStr);
+  if (startMinutes === 99999) return null;
+  return {
+    startMinutes,
+    endMinutes: startMinutes + defaultDurationMinutes,
+  };
+}
+
+/**
+ * Checks if two time intervals overlap.
+ * Touching boundary intervals (e.g. 10:00-11:00 and 11:00-12:00) do NOT overlap.
+ */
+export function isTimeRangeOverlapping(rangeA: TimeRangeMinutes, rangeB: TimeRangeMinutes): boolean {
+  return rangeA.startMinutes < rangeB.endMinutes && rangeA.endMinutes > rangeB.startMinutes;
+}
+
+/**
+ * Checks if a recording location/type occupies the physical studio.
+ * - 'IN_STUDIO' or 'STUDIO': Yes (Physical studio occupied)
+ * - 'STUDIO_REMOTE_GUEST': Yes (Physical studio occupied by host/panel while guest is remote)
+ * - 'FULLY_REMOTE' or 'REMOTE': No (Zero physical studio occupation)
+ */
+export function requiresStudio(loc?: string): boolean {
+  if (!loc) return true; // Default for studio productions
+  return loc === 'IN_STUDIO' || loc === 'STUDIO_REMOTE_GUEST' || loc === 'STUDIO';
+}
+
+/**
+ * Validates whether booking the main studio at the given date and time conflicts
+ * with any existing studio filming or studio rental.
+ * Fully remote recordings (FULLY_REMOTE / REMOTE) are completely exempt.
+ */
+export function findStudioConflict<
+  T extends {
+    id: string;
+    title: string;
+    filmingDate?: string;
+    filmingTime?: string;
+    location?: any;
+    recordingType?: any;
+    status?: string;
+    type?: string;
+    rentalDetails?: { recordingDate?: string; recordingTime?: string };
+  }
+>(
+  productions: T[],
+  date: string,
+  timeStr: string | undefined,
+  location: any = 'IN_STUDIO',
+  excludeProductionId?: string
+): { hasConflict: boolean; conflictingProduction?: T; reason?: string } {
+  // If target does not occupy the physical studio, no conflict possible
+  if (!requiresStudio(location)) {
+    return { hasConflict: false };
+  }
+
+  if (!date || !timeStr) {
+    return { hasConflict: false };
+  }
+
+  const targetRange = parseTimeRangeToMinutes(timeStr);
+  if (!targetRange) {
+    return { hasConflict: false };
+  }
+
+  for (const p of productions) {
+    if (excludeProductionId && p.id === excludeProductionId) continue;
+    if (p.status === 'ARCHIVED') continue;
+
+    // Determine filming date of existing production
+    const existingDate = p.filmingDate || p.rentalDetails?.recordingDate;
+    if (existingDate !== date) continue;
+
+    // Check if existing production occupies the physical studio
+    const existingLocation = p.location || p.recordingType || (p.type === 'RENTAL' ? 'STUDIO' : 'STUDIO');
+    if (!requiresStudio(existingLocation)) continue; // Fully remote shoots do not occupy the studio
+
+    // Determine time of existing shoot
+    const existingTimeStr = p.filmingTime || p.rentalDetails?.recordingTime;
+    if (!existingTimeStr) continue;
+
+    const existingRange = parseTimeRangeToMinutes(existingTimeStr);
+    if (!existingRange) continue;
+
+    if (isTimeRangeOverlapping(targetRange, existingRange)) {
+      return {
+        hasConflict: true,
+        conflictingProduction: p,
+        reason: `Studio is already booked on ${date} at ${existingTimeStr} for "${p.title}". Two productions cannot be booked in the studio at the same time. Please choose another hour or set location to Fully Remote recording.`,
+      };
+    }
+  }
+
+  return { hasConflict: false };
+}
+

@@ -4,6 +4,7 @@ import {
   canUserPerform,
   createNewEpisode,
   createNewPilot,
+  createNewRental,
   completeFilmingStage,
   completeFileUploadStage,
   completeProducerPackageStage,
@@ -22,7 +23,7 @@ import {
 } from '../lib/workflow';
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
-import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule } from '../lib/utils';
+import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict } from '../lib/utils';
 registerDbAccess({ getDbAsync, saveDbAsync });
 import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
 import { POST as postReset } from '../app/api/reset/route';
@@ -849,13 +850,156 @@ try {
   console.error('✗ Test 20 Failed', err);
 }
 
+// Test 21: Studio conflict prevention across 3 recording setups:
+// 1) In studio recording (IN_STUDIO) -> occupies studio
+// 2) Studio + remote interviewee (STUDIO_REMOTE_GUEST) -> occupies studio
+// 3) Fully remote recording (FULLY_REMOTE) -> exempt from studio capacity
+try {
+  // Step 1: Create a studio shoot with IN_STUDIO on 2026-09-28 at 14:00 - 15:30
+  const studioEp1 = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '801',
+      filmingDate: '2026-09-28',
+      filmingTime: '14:00 - 15:30',
+      location: 'IN_STUDIO',
+      priority: 'HIGH',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+  assert(studioEp1, 'First studio episode should be created');
+  assert.strictEqual(studioEp1.recordingType, 'IN_STUDIO');
+
+  // Step 2: Attempt to book Studio + remote interviewee (STUDIO_REMOTE_GUEST) at overlapping hour 14:30 - 16:00 (MUST FAIL)
+  let studioGuestConflictThrew = false;
+  let conflictReason = '';
+  try {
+    await createNewEpisode(
+      {
+        showId: 'show_the_quad',
+        episodeNumber: '802',
+        filmingDate: '2026-09-28',
+        filmingTime: '14:30 - 16:00',
+        location: 'STUDIO_REMOTE_GUEST',
+        priority: 'NORMAL',
+        producerId: producerUser.id,
+        editorId: editorUser.id,
+      },
+      producerUser
+    );
+  } catch (err) {
+    studioGuestConflictThrew = true;
+    conflictReason = err.message;
+  }
+  assert.strictEqual(studioGuestConflictThrew, true, 'Studio + Remote Interviewee overlapping studio shoot must be blocked');
+  assert(conflictReason.includes('Studio is already booked'), 'Error message must explain the studio conflict');
+
+  // Step 3: Attempt to book a studio rental on the same hour (MUST FAIL)
+  let rentalConflictThrew = false;
+  try {
+    await createNewRental(
+      {
+        clientName: 'Reuters TV',
+        projectName: 'Middle East Live Cross',
+        contactName: 'James Miller',
+        contactInfo: 'jmiller@reuters.com',
+        recordingDate: '2026-09-28',
+        recordingTime: '14:00 - 15:00',
+        studioSetup: 'Main anchor desk',
+        producerId: producerUser.id,
+      },
+      producerUser
+    );
+  } catch (err) {
+    rentalConflictThrew = true;
+  }
+  assert.strictEqual(rentalConflictThrew, true, 'Studio rental conflicting with studio shoot must be blocked');
+
+  // Step 4: Attempt to book a PILOT with IN_STUDIO on the same hour (MUST FAIL)
+  let pilotConflictThrew = false;
+  try {
+    await createNewPilot(
+      {
+        title: 'Geopolitics Weekly',
+        conceptSummary: 'Middle East analysis deep dive',
+        filmingDate: '2026-09-28',
+        filmingTime: '14:00 - 15:00',
+        location: 'IN_STUDIO',
+        priority: 'HIGH',
+        producerId: producerUser.id,
+      },
+      producerUser
+    );
+  } catch (err) {
+    pilotConflictThrew = true;
+  }
+  assert.strictEqual(pilotConflictThrew, true, 'Pilot with In Studio recording conflicting with existing shoot must be blocked');
+
+  // Step 5: Book a FULLY_REMOTE episode shoot on the exact same date and hour (MUST SUCCEED)
+  const fullyRemoteEp = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '803',
+      filmingDate: '2026-09-28',
+      filmingTime: '14:00 - 15:30',
+      location: 'FULLY_REMOTE',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+  assert(fullyRemoteEp, 'Fully remote shoot on same hour must succeed without studio conflict');
+  assert.strictEqual(fullyRemoteEp.recordingType, 'FULLY_REMOTE');
+
+  // Step 6: Book a FULLY_REMOTE PILOT on the exact same date and hour (MUST SUCCEED)
+  const fullyRemotePilot = await createNewPilot(
+    {
+      title: 'Global Perspectives',
+      conceptSummary: 'Remote interviews with international delegates',
+      filmingDate: '2026-09-28',
+      filmingTime: '14:00 - 15:30',
+      location: 'FULLY_REMOTE',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+    },
+    producerUser
+  );
+  assert(fullyRemotePilot, 'Fully remote pilot must succeed concurrently');
+  assert.strictEqual(fullyRemotePilot.recordingType, 'FULLY_REMOTE');
+
+  // Step 7: Book back-to-back studio shoot right after wrap (15:30 - 17:00) with STUDIO_REMOTE_GUEST (MUST SUCCEED)
+  const backToBackStudio = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '804',
+      filmingDate: '2026-09-28',
+      filmingTime: '15:30 - 17:00',
+      location: 'STUDIO_REMOTE_GUEST',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+  assert(backToBackStudio, 'Back-to-back studio shoot starting at previous wrap time must succeed');
+  assert.strictEqual(backToBackStudio.recordingType, 'STUDIO_REMOTE_GUEST');
+
+  console.log('✓ Test 21 Passed: Conflict prevented for In Studio & Studio+Remote Guest, while Fully Remote recordings succeed concurrently');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 21 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 20 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 21 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 20) {
+if (testsPassed !== 21) {
   process.exit(1);
 }

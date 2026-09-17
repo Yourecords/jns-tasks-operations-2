@@ -122,6 +122,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     { label: 'Productions', href: '/productions', icon: Film },
     { label: 'Pilots', href: '/pilots', icon: Compass },
     { label: 'Studio Rentals', href: '/rentals', icon: Building2 },
+    { label: 'Production Calendar', href: '/calendar', icon: Calendar },
     {
       label: 'My Tasks',
       href: '/my-tasks',

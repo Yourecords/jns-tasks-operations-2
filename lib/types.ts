@@ -171,6 +171,8 @@ export interface PilotDetails {
   convertedByUserId?: string;
 }
 
+export type RecordingType = 'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE';
+
 export interface Production {
   id: string;
   type: ProductionType;
@@ -182,6 +184,10 @@ export interface Production {
   currentStage: WorkflowStage;
   filmingDate?: string;
   filmingTime?: string;
+  location?: RecordingType | 'STUDIO' | 'REMOTE';
+  recordingType?: RecordingType;
+  editingDate?: string;
+  editingTime?: string;
   editingDeadline?: string;
   publicationDeadline?: string;
   publishedAt?: string;
@@ -242,6 +248,7 @@ export interface Meeting {
   id: string;
   title: string;
   date: string;
+  time?: string;
   participants: string;
   writtenById: string;
   writtenByName: string;
