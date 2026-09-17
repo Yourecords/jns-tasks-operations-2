@@ -27,6 +27,7 @@ import {
   Scissors,
   Radio,
   FileText,
+  ArrowLeft,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, Meeting, Show, User } from '@/lib/types';
@@ -52,6 +53,7 @@ export default function ProductionCalendarPage() {
   const [currentAnchorDate, setCurrentAnchorDate] = useState<Date>(new Date());
   const [selectedDayDate, setSelectedDayDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('board');
+  const [dayViewMode, setDayViewMode] = useState<'grid' | 'cards'>('grid');
   const [fullWeek, setFullWeek] = useState<boolean>(false); // 5 days (Sun-Thu) default
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -687,15 +689,22 @@ export default function ProductionCalendarPage() {
                       <th
                         key={day.dateString}
                         colSpan={colSpan}
+                        onClick={() => {
+                          setSelectedDayDate(day.date);
+                          setViewMode('day');
+                        }}
                         style={{
                           padding: '10px 8px',
                           background: day.isToday
-                            ? 'linear-gradient(180deg, rgba(212, 160, 23, 0.15) 0%, rgba(30, 41, 59, 0.9) 100%)'
+                            ? 'linear-gradient(180deg, rgba(212, 160, 23, 0.22) 0%, rgba(30, 41, 59, 0.95) 100%)'
                             : 'var(--bg-main, #0f172a)',
                           borderRight: '2px solid var(--border-color, #334155)',
                           borderBottom: '1px solid var(--border-color, #334155)',
                           textAlign: 'center',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
                         }}
+                        title={`Click to open full ${day.dayName} Production Calendar`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                           <span
@@ -733,6 +742,20 @@ export default function ProductionCalendarPage() {
                               TODAY
                             </span>
                           )}
+                          <span
+                            style={{
+                              fontSize: '9.5px',
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              backgroundColor: 'rgba(212, 160, 23, 0.18)',
+                              color: 'var(--jns-gold)',
+                              border: '1px solid rgba(212, 160, 23, 0.35)',
+                              marginLeft: '3px',
+                            }}
+                          >
+                            Day View ↗
+                          </span>
                         </div>
                       </th>
                     );
@@ -1453,400 +1476,1101 @@ export default function ProductionCalendarPage() {
         </div>
       )}
 
-      {/* VIEW MODE 2: DAY TIMELINE */}
-      {viewMode === 'day' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.25rem' }}>
-          {/* Left: Day picker sidebar */}
-          <div
-            style={{
-              background: 'var(--card-bg, #1e293b)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-color, #334155)',
-              padding: '1rem',
-            }}
-          >
-            <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.75rem' }}>
-              Select Weekday
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              {weekDays.map((day) => {
-                const isSelected = formatDateToYYYYMMDD(selectedDayDate) === day.dateString;
-                const count = filteredProductions.filter((p) => p.filmingDate === day.dateString || p.editingDate === day.dateString).length;
+      {/* VIEW MODE 2: FULL-WINDOW SINGLE-DAY PRODUCTION CALENDAR */}
+      {viewMode === 'day' && (() => {
+        const dayStr = formatDateToYYYYMMDD(selectedDayDate);
+        const dayProds = filteredProductions.filter((p) => p.filmingDate === dayStr || p.editingDate === dayStr);
+        const dayMtgs = getMeetingsForDay(dayStr);
+        const dayDeliverables = getDeliverablesForDay(dayStr);
+        const dayStudioShoots = filteredProductions.filter((p) => p.filmingDate === dayStr && requiresStudio(p.location));
+        const dayRemoteShoots = filteredProductions.filter((p) => p.filmingDate === dayStr && !requiresStudio(p.location));
+        const isSelectedDayToday = dayStr === formatDateToYYYYMMDD(new Date());
 
-                return (
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Top Day Header & Quick Navigation Bar */}
+            <div
+              style={{
+                background: 'var(--card-bg, #1e293b)',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color, #334155)',
+                padding: '1.1rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.85rem',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                   <button
-                    key={day.dateString}
-                    onClick={() => setSelectedDayDate(day.date)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: isSelected ? '1px solid var(--jns-gold)' : '1px solid transparent',
-                      background: isSelected ? 'rgba(212, 160, 23, 0.15)' : 'rgba(15, 23, 42, 0.4)',
-                      color: isSelected ? 'var(--jns-gold)' : 'var(--text-main)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
+                    type="button"
+                    onClick={() => setViewMode('board')}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 700 }}
                   >
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700 }}>{day.dayName}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        {day.monthName} {day.dayNumber}
-                      </div>
-                    </div>
-                    {count > 0 && (
+                    <ArrowLeft size={14} />
+                    <span>Back to Week Board</span>
+                  </button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prev = new Date(selectedDayDate);
+                        prev.setDate(prev.getDate() - 1);
+                        setSelectedDayDate(prev);
+                      }}
+                      className="btn btn-secondary btn-xs"
+                      title="Previous Day"
+                      style={{ padding: '4px 8px' }}
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDayDate(new Date())}
+                      className="btn btn-secondary btn-xs"
+                      style={{ fontSize: '11px', fontWeight: 700, padding: '4px 10px' }}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = new Date(selectedDayDate);
+                        next.setDate(next.getDate() + 1);
+                        setSelectedDayDate(next);
+                      }}
+                      className="btn btn-secondary btn-xs"
+                      title="Next Day"
+                      style={{ padding: '4px 8px' }}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '4px' }}>
+                    <h2 style={{ fontSize: '19px', fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '-0.02em' }}>
+                      {selectedDayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </h2>
+                    {isSelectedDayToday && (
                       <span
                         style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '2px 7px',
-                          borderRadius: '10px',
-                          background: isSelected ? 'var(--jns-gold)' : 'var(--border-color, #334155)',
-                          color: isSelected ? '#000' : 'var(--text-secondary)',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          background: 'var(--jns-gold)',
+                          color: '#000',
+                          letterSpacing: '0.04em',
                         }}
                       >
-                        {count} {count === 1 ? 'event' : 'events'}
+                        TODAY
                       </span>
                     )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                  </div>
+                </div>
 
-          {/* Right: Detailed Day Timeline */}
-          <div
-            style={{
-              background: 'var(--card-bg, #1e293b)',
-              borderRadius: '12px',
-              border: '1px solid var(--border-color, #334155)',
-              padding: '1.25rem',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-                  {weekDays.find((d) => d.dateString === formatDateToYYYYMMDD(selectedDayDate))?.dayName || 'Day'}{' '}
-                  Timeline
-                </h2>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
-                  Filming calls, editing suites, and daily release timetable
-                </p>
+                {/* Submode Switcher & Quick Stats */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      padding: '3px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #334155)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setDayViewMode('grid')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: dayViewMode === 'grid' ? 'var(--jns-gold)' : 'transparent',
+                        color: dayViewMode === 'grid' ? '#000' : 'var(--text-secondary)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <LayoutGrid size={13} />
+                      <span>Full Schedule Grid</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDayViewMode('cards')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: dayViewMode === 'cards' ? 'var(--jns-gold)' : 'transparent',
+                        color: dayViewMode === 'cards' ? '#000' : 'var(--text-secondary)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <ListOrdered size={13} />
+                      <span>Operations Cards</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weekday Switcher Strip (Similar to Google Calendar day switching) */}
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginRight: '4px' }}>
+                  Weekdays:
+                </span>
+                {weekDays.map((d) => {
+                  const isSelected = formatDateToYYYYMMDD(selectedDayDate) === d.dateString;
+                  const count = filteredProductions.filter((p) => p.filmingDate === d.dateString || p.editingDate === d.dateString).length;
+
+                  return (
+                    <button
+                      key={d.dateString}
+                      onClick={() => setSelectedDayDate(d.date)}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '8px',
+                        border: isSelected ? '1.5px solid var(--jns-gold)' : '1px solid var(--border-color, #334155)',
+                        background: isSelected ? 'rgba(212, 160, 23, 0.2)' : 'rgba(15, 23, 42, 0.4)',
+                        color: isSelected ? 'var(--jns-gold)' : 'var(--text-main)',
+                        fontWeight: isSelected ? 800 : 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '12px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <span>{d.dayName}</span>
+                      <span style={{ fontSize: '11px', opacity: 0.8 }}>{d.monthName} {d.dayNumber}</span>
+                      {d.isToday && (
+                        <span style={{ fontSize: '8.5px', background: 'var(--jns-gold)', color: '#000', padding: '1px 4px', borderRadius: '4px', fontWeight: 800 }}>
+                          TODAY
+                        </span>
+                      )}
+                      {count > 0 && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            background: isSelected ? 'var(--jns-gold)' : 'rgba(255, 255, 255, 0.12)',
+                            color: isSelected ? '#000' : 'var(--text-secondary)',
+                            padding: '1px 5px',
+                            borderRadius: '10px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+
+                {/* Day Summary Badges */}
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', color: '#60a5fa', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.25)', padding: '3px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                    🎬 Studio Shoots: {dayStudioShoots.length}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#34d399', background: 'rgba(52, 211, 153, 0.12)', border: '1px solid rgba(52, 211, 153, 0.25)', padding: '3px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                    🌐 Remote Shoots: {dayRemoteShoots.length}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#e879f9', background: 'rgba(232, 121, 249, 0.12)', border: '1px solid rgba(232, 121, 249, 0.25)', padding: '3px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                    ✂️ Editors on Shift: {activeEditors.length}
+                  </span>
+                  {dayDeliverables.length > 0 && (
+                    <span style={{ fontSize: '11px', color: '#fde047', background: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.35)', padding: '3px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                      📢 Releases: {dayDeliverables.length}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* List of events on this selected day */}
-            {(() => {
-              const dayStr = formatDateToYYYYMMDD(selectedDayDate);
-              const dayProds = filteredProductions.filter((p) => p.filmingDate === dayStr || p.editingDate === dayStr);
-              const dayMtgs = getMeetingsForDay(dayStr);
+            {/* SUBMODE A: FULL-WINDOW SINGLE-DAY SCHEDULE GRID */}
+            {dayViewMode === 'grid' && (
+              <div
+                style={{
+                  background: 'var(--card-bg, #1e293b)',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color, #334155)',
+                  overflowX: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    tableLayout: 'fixed',
+                    minWidth: '1100px',
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th
+                        style={{
+                          width: '85px',
+                          padding: '12px 8px',
+                          background: 'var(--bg-main, #0f172a)',
+                          borderRight: '2px solid var(--border-color, #334155)',
+                          borderBottom: '2px solid var(--border-color, #334155)',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          color: 'var(--text-secondary)',
+                          textAlign: 'center',
+                          letterSpacing: '0.04em',
+                          position: 'sticky',
+                          left: 0,
+                          zIndex: 10,
+                        }}
+                      >
+                        TIME
+                      </th>
 
-              if (dayProds.length === 0 && dayMtgs.length === 0) {
-                return (
+                      {/* PHYSICAL STUDIO COLUMN */}
+                      <th
+                        style={{
+                          width: '320px',
+                          padding: '12px 10px',
+                          background: 'rgba(30, 41, 59, 0.95)',
+                          borderRight: '1px solid var(--border-color, #334155)',
+                          borderBottom: '2px solid var(--border-color, #334155)',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Video size={14} color="#60a5fa" />
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#93c5fd', letterSpacing: '0.04em' }}>
+                            PHYSICAL STUDIO (Jerusalem Studio A)
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          In-Studio & Hybrid Guests (Exclusive physical facility access)
+                        </div>
+                      </th>
+
+                      {/* REMOTE FILMING COLUMN */}
+                      <th
+                        style={{
+                          width: '260px',
+                          padding: '12px 10px',
+                          background: 'rgba(30, 41, 59, 0.85)',
+                          borderRight: '2px solid var(--border-color, #334155)',
+                          borderBottom: '2px solid var(--border-color, #334155)',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Radio size={14} color="#34d399" />
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#86efac', letterSpacing: '0.04em' }}>
+                            REMOTE & FIELD RECORDINGS
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          Zoom, StreamYard & Field Crews (Concurrent shoots permitted)
+                        </div>
+                      </th>
+
+                      {/* VIDEO EDITORS COLUMNS */}
+                      {activeEditors.map((ed, idx) => (
+                        <th
+                          key={`day-header-ed-${ed.id}`}
+                          style={{
+                            width: '230px',
+                            padding: '12px 8px',
+                            background: 'rgba(30, 41, 59, 0.75)',
+                            borderRight:
+                              idx === activeEditors.length - 1
+                                ? 'none'
+                                : '1px solid var(--border-color, #334155)',
+                            borderBottom: '2px solid var(--border-color, #334155)',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Scissors size={13} color="#e879f9" />
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#f0abfc' }}>
+                              {ed.fullName || ed.name}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#cbd5e1', marginTop: '2px', fontWeight: 600 }}>
+                            SHIFT QUEUE (Tasks to work on)
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {TIME_SLOTS.map((slotHour, slotIndex) => {
+                      // Check meeting
+                      const meetingAtHour = dayMtgs.find((m) => {
+                        const h = m.time ? getEventHour(m.time) : '10:00';
+                        return h === slotHour;
+                      });
+
+                      // Studio shoots at this hour
+                      const studioShootsAtHour = dayStudioShoots.filter((p) => {
+                        const h = getEventHour(p.filmingTime);
+                        return h === slotHour;
+                      });
+
+                      // Remote shoots at this hour
+                      const remoteShootsAtHour = dayRemoteShoots.filter((p) => {
+                        const h = getEventHour(p.filmingTime);
+                        return h === slotHour;
+                      });
+
+                      const hasStudioConflict = studioShootsAtHour.length > 1;
+
+                      return (
+                        <tr
+                          key={`single-day-slot-${slotHour}`}
+                          style={{
+                            borderBottom: '1px solid var(--border-color, #334155)',
+                            height: '62px',
+                          }}
+                        >
+                          {/* Time Column */}
+                          <td
+                            style={{
+                              padding: '8px',
+                              textAlign: 'center',
+                              background: 'var(--bg-main, #0f172a)',
+                              borderRight: '2px solid var(--border-color, #334155)',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: 'var(--text-secondary)',
+                              position: 'sticky',
+                              left: 0,
+                              zIndex: 9,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                              <Clock size={11} />
+                              <span>{slotHour}</span>
+                            </div>
+                          </td>
+
+                          {/* Studio Filming Cell */}
+                          {meetingAtHour ? (
+                            <td
+                              colSpan={2}
+                              style={{
+                                padding: '4px 8px',
+                                borderRight: '2px solid var(--border-color, #334155)',
+                                verticalAlign: 'middle',
+                                background: 'rgba(71, 85, 105, 0.2)',
+                              }}
+                            >
+                              <div
+                                onClick={() => setSelectedEvent({ type: 'MEETING', data: meetingAtHour })}
+                                style={{
+                                  borderRadius: '6px',
+                                  padding: '7px 10px',
+                                  background: 'rgba(71, 85, 105, 0.45)',
+                                  border: '1px solid #64748b',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                }}
+                              >
+                                <div>
+                                  <span style={{ fontSize: '10px', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: '#334155', color: '#cbd5e1', marginRight: '6px' }}>
+                                    {meetingAtHour.time || '10:00 - 11:30'}
+                                  </span>
+                                  <strong style={{ fontSize: '12px', color: '#f8fafc' }}>{meetingAtHour.title}</strong>
+                                </div>
+                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Studio Operations Sync</span>
+                              </div>
+                            </td>
+                          ) : (
+                            <>
+                              <td
+                                style={{
+                                  padding: '4px 6px',
+                                  borderRight: '1px solid var(--border-color, #334155)',
+                                  verticalAlign: 'top',
+                                  background: hasStudioConflict ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
+                                }}
+                              >
+                                {hasStudioConflict && (
+                                  <div
+                                    style={{
+                                      padding: '4px 6px',
+                                      borderRadius: '4px',
+                                      background: 'rgba(239, 68, 68, 0.25)',
+                                      border: '1px solid #ef4444',
+                                      color: '#fca5a5',
+                                      fontSize: '10px',
+                                      fontWeight: 800,
+                                      marginBottom: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <AlertCircle size={12} color="#ef4444" />
+                                    <span>STUDIO DOUBLE-BOOKING CONFLICT!</span>
+                                  </div>
+                                )}
+
+                                {studioShootsAtHour.length === 0 ? (
+                                  <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.3)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
+                                    Available
+                                  </div>
+                                ) : (
+                                  studioShootsAtHour.map((p) => {
+                                    const theme = getShowTheme(p.title, p.type);
+                                    return (
+                                      <div
+                                        key={`single-studio-${p.id}`}
+                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                        style={{
+                                          borderRadius: '6px',
+                                          padding: '6px 8px',
+                                          marginBottom: '4px',
+                                          background: theme.bgDark,
+                                          border: `1px solid ${hasStudioConflict ? '#ef4444' : theme.border}`,
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '3px', background: theme.badgeBg, color: '#fff' }}>
+                                            {p.filmingTime || slotHour}
+                                          </span>
+                                          {p.location === 'STUDIO_REMOTE_GUEST' && (
+                                            <span style={{ fontSize: '8.5px', color: '#38bdf8', background: 'rgba(14, 165, 233, 0.2)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, border: '1px solid rgba(14, 165, 233, 0.4)' }}>
+                                              + Remote Guest
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, marginTop: '2px' }}>
+                                          {p.title}
+                                        </div>
+                                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                                          <span>Prod: {getUserName(p.producerId)}</span>
+                                          {p.editorId && (
+                                            <span style={{ color: '#c084fc' }}>Ed: {getUserName(p.editorId)}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </td>
+
+                              {/* Remote Filming Cell */}
+                              <td
+                                style={{
+                                  padding: '4px 6px',
+                                  borderRight: '2px solid var(--border-color, #334155)',
+                                  verticalAlign: 'top',
+                                }}
+                              >
+                                {remoteShootsAtHour.length === 0 ? (
+                                  <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
+                                    No remote shoot
+                                  </div>
+                                ) : (
+                                  remoteShootsAtHour.map((p) => {
+                                    const theme = getShowTheme(p.title, p.type);
+                                    return (
+                                      <div
+                                        key={`single-remote-${p.id}`}
+                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                        style={{
+                                          borderRadius: '6px',
+                                          padding: '5px 8px',
+                                          marginBottom: '4px',
+                                          background: theme.bgDark,
+                                          border: `1px solid ${theme.border}`,
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '3px', background: '#059669', color: '#fff' }}>
+                                            {p.filmingTime || slotHour} (REMOTE)
+                                          </span>
+                                        </div>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, marginTop: '2px' }}>
+                                          {p.title}
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </td>
+                            </>
+                          )}
+
+                          {/* Video Editors Shift Workload Queue (One full-height column per editor, NO time dedicated) */}
+                          {slotIndex === 0 &&
+                            activeEditors.map((ed, idx) => {
+                              const shiftTasks = getEditorShiftTasks(ed.id, dayStr);
+
+                              return (
+                                <td
+                                  key={`single-day-ed-${ed.id}`}
+                                  rowSpan={TIME_SLOTS.length}
+                                  style={{
+                                    padding: '8px 6px',
+                                    borderRight:
+                                      idx === activeEditors.length - 1
+                                        ? 'none'
+                                        : '1px solid var(--border-color, #334155)',
+                                    verticalAlign: 'top',
+                                    background: 'rgba(15, 23, 42, 0.25)',
+                                    width: '230px',
+                                  }}
+                                >
+                                  {/* Shift Queue Header */}
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      padding: '5px 8px',
+                                      borderRadius: '6px',
+                                      background: 'rgba(192, 38, 211, 0.12)',
+                                      border: '1px solid rgba(192, 38, 211, 0.3)',
+                                      marginBottom: '8px',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e879f9' }} />
+                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#e879f9', letterSpacing: '0.04em' }}>
+                                        SHIFT QUEUE
+                                      </span>
+                                    </div>
+                                    <span
+                                      style={{
+                                        fontSize: '9.5px',
+                                        fontWeight: 800,
+                                        background: 'rgba(192, 38, 211, 0.25)',
+                                        color: '#f5d0fe',
+                                        padding: '1px 6px',
+                                        borderRadius: '10px',
+                                      }}
+                                    >
+                                      {shiftTasks.length} {shiftTasks.length === 1 ? 'task' : 'tasks'}
+                                    </span>
+                                  </div>
+
+                                  {/* Task list without any dedicated hour slots */}
+                                  {shiftTasks.length === 0 ? (
+                                    <div
+                                      style={{
+                                        padding: '24px 8px',
+                                        textAlign: 'center',
+                                        borderRadius: '6px',
+                                        border: '1px dashed rgba(51, 65, 85, 0.6)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '11px',
+                                        background: 'rgba(15, 23, 42, 0.2)',
+                                      }}
+                                    >
+                                      No editing tasks on shift for {ed.name}
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      {shiftTasks.map((p, pIdx) => {
+                                        const theme = getShowTheme(p.title, p.type);
+                                        return (
+                                          <div
+                                            key={`day-task-${p.id}`}
+                                            onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                            style={{
+                                              borderRadius: '8px',
+                                              padding: '8px 10px',
+                                              background: theme.bgDark,
+                                              border: `1px solid ${theme.border}`,
+                                              cursor: 'pointer',
+                                              transition: 'all 0.15s ease',
+                                            }}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                <span
+                                                  style={{
+                                                    fontSize: '9.5px',
+                                                    fontWeight: 800,
+                                                    padding: '1px 5px',
+                                                    borderRadius: '3px',
+                                                    background: '#e879f9',
+                                                    color: '#000',
+                                                  }}
+                                                >
+                                                  #{pIdx + 1}
+                                                </span>
+                                                <span
+                                                  style={{
+                                                    fontSize: '9px',
+                                                    fontWeight: 800,
+                                                    padding: '1px 5px',
+                                                    borderRadius: '3px',
+                                                    background: theme.badgeBg,
+                                                    color: '#fff',
+                                                  }}
+                                                >
+                                                  {p.type}
+                                                </span>
+                                              </div>
+                                              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                                {p.currentStage}
+                                              </span>
+                                            </div>
+
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, lineHeight: 1.25 }}>
+                                              {p.title}
+                                            </div>
+
+                                            <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <span
+                                                className={`priority-pill priority-${p.priority.toLowerCase()}`}
+                                                style={{ fontSize: '9px', padding: '1px 5px' }}
+                                              >
+                                                {p.priority}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleOpenProduction(p.id);
+                                                }}
+                                                className="btn btn-secondary btn-xs"
+                                                style={{ fontSize: '10px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                              >
+                                                <span>Tasks</span>
+                                                <ExternalLink size={10} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+
+                  {/* BOTTOM ROW: DELIVERABLES & RELEASES FOR THIS DAY */}
+                  <tfoot>
+                    <tr>
+                      <td
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'center',
+                          background: 'linear-gradient(180deg, #ca8a04 0%, #a16207 100%)',
+                          color: '#000',
+                          fontSize: '11px',
+                          fontWeight: 900,
+                          letterSpacing: '0.04em',
+                          borderRight: '2px solid rgba(0, 0, 0, 0.2)',
+                          position: 'sticky',
+                          left: 0,
+                          zIndex: 10,
+                        }}
+                      >
+                        DELIVERABLES
+                      </td>
+                      <td
+                        colSpan={2 + activeEditors.length}
+                        style={{
+                          padding: '8px 12px',
+                          background: 'linear-gradient(90deg, rgba(234, 179, 8, 0.18) 0%, rgba(30, 41, 59, 0.95) 100%)',
+                          borderTop: '2px solid #ca8a04',
+                        }}
+                      >
+                        {dayDeliverables.length === 0 ? (
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                            No broadcast releases or YouTube publications scheduled for {selectedDayDate.toLocaleDateString('en-US', { weekday: 'long' })}.
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#fde047' }}>
+                              📢 Scheduled Publications ({dayDeliverables.length}):
+                            </span>
+                            {dayDeliverables.map((item) => {
+                              const theme = getShowTheme(item.title, item.type);
+                              const isPublished = item.status === 'COMPLETED' || item.currentStage === 'PUBLISHED';
+                              return (
+                                <div
+                                  key={`single-deliverable-${item.id}`}
+                                  onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: item })}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    background: 'rgba(15, 23, 42, 0.8)',
+                                    border: `1px solid ${isPublished ? '#22c55e' : '#eab308'}`,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc' }}>
+                                    {item.title}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: '9px',
+                                      fontWeight: 800,
+                                      padding: '1px 5px',
+                                      borderRadius: '3px',
+                                      background: isPublished ? '#22c55e' : '#eab308',
+                                      color: '#000',
+                                    }}
+                                  >
+                                    {isPublished ? 'PUBLISHED' : 'SCHEDULED'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* SUBMODE B: DETAILED OPERATIONS CARDS & LISTS */}
+            {dayViewMode === 'cards' && (
+              <div
+                style={{
+                  background: 'var(--card-bg, #1e293b)',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color, #334155)',
+                  padding: '1.25rem',
+                }}
+              >
+                {dayProds.length === 0 && dayMtgs.length === 0 ? (
                   <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <CalendarIcon size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.5 }} />
                     <p style={{ fontSize: '14px', margin: 0 }}>No filming or editing sessions scheduled for this date.</p>
                   </div>
-                );
-              }
-
-              return (
-                <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                  {/* Meetings */}
-                  {dayMtgs.map((m) => (
-                    <div
-                      key={m.id}
-                      onClick={() => setSelectedEvent({ type: 'MEETING', data: m })}
-                      style={{
-                        padding: '1rem',
-                        borderRadius: '10px',
-                        background: 'rgba(71, 85, 105, 0.25)',
-                        border: '1px solid #64748b',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                      {/* Meetings */}
+                      {dayMtgs.map((m) => (
+                        <div
+                          key={m.id}
+                          onClick={() => setSelectedEvent({ type: 'MEETING', data: m })}
                           style={{
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            background: '#334155',
-                            color: '#cbd5e1',
+                            padding: '1rem',
+                            borderRadius: '10px',
+                            background: 'rgba(71, 85, 105, 0.25)',
+                            border: '1px solid #64748b',
+                            cursor: 'pointer',
                           }}
                         >
-                          {m.time || '10:00 - 11:30'} • EDITORIAL MEETING
-                        </span>
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>Studio Operations Sync</span>
-                      </div>
-                      <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#f1f5f9', margin: '4px 0' }}>{m.title}</h4>
-                      <p style={{ fontSize: '12px', color: '#cbd5e1', margin: 0 }}>{m.summary}</p>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
-                        Participants: {m.participants}
-                      </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                background: '#334155',
+                                color: '#cbd5e1',
+                              }}
+                            >
+                              {m.time || '10:00 - 11:30'} • EDITORIAL MEETING
+                            </span>
+                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>Studio Operations Sync</span>
+                          </div>
+                          <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#f1f5f9', margin: '4px 0' }}>{m.title}</h4>
+                          <p style={{ fontSize: '12px', color: '#cbd5e1', margin: 0 }}>{m.summary}</p>
+                          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+                            Participants: {m.participants}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Productions */}
+                      {dayProds.map((p) => {
+                        const theme = getShowTheme(p.title, p.type);
+                        const isFilmingToday = p.filmingDate === dayStr;
+
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                            style={{
+                              padding: '1rem',
+                              borderRadius: '10px',
+                              background: theme.bgDark,
+                              border: `1px solid ${theme.border}`,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                  <span
+                                    style={{
+                                      fontSize: '10px',
+                                      fontWeight: 800,
+                                      padding: '2px 7px',
+                                      borderRadius: '4px',
+                                      background: theme.badgeBg,
+                                      color: '#fff',
+                                    }}
+                                  >
+                                    {p.type}
+                                  </span>
+                                  {p.location && (
+                                    <span
+                                      style={{
+                                        fontSize: '10px',
+                                        fontWeight: 700,
+                                        color: !requiresStudio(p.location)
+                                          ? '#34d399'
+                                          : p.location === 'STUDIO_REMOTE_GUEST'
+                                          ? '#38bdf8'
+                                          : '#60a5fa',
+                                      }}
+                                    >
+                                      {p.location === 'STUDIO_REMOTE_GUEST'
+                                        ? 'STUDIO + REMOTE GUEST'
+                                        : !requiresStudio(p.location)
+                                        ? 'FULLY REMOTE'
+                                        : 'IN STUDIO'}
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                    Stage: <strong>{p.currentStage}</strong>
+                                  </span>
+                                </div>
+                                <h4 style={{ fontSize: '15px', fontWeight: 800, color: theme.textDark, margin: '4px 0' }}>
+                                  {p.title}
+                                </h4>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenProduction(p.id);
+                                }}
+                                className="btn btn-secondary btn-sm"
+                                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}
+                              >
+                                <span>Open Tasks</span>
+                                <ExternalLink size={12} />
+                              </button>
+                            </div>
+
+                            {/* Timing and crew details */}
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                gap: '0.6rem',
+                                marginTop: '0.75rem',
+                                paddingTop: '0.75rem',
+                                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                              }}
+                            >
+                              {isFilmingToday && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                  <strong style={{ color: 'var(--text-main)' }}>Filming Time:</strong>{' '}
+                                  {p.filmingTime || '10:00 IDT'}
+                                </div>
+                              )}
+                              {p.editorId && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                  <strong style={{ color: 'var(--text-main)' }}>Editor:</strong> {getUserName(p.editorId)}{' '}
+                                  <span style={{ fontSize: '11px', color: '#e879f9', fontWeight: 600 }}>({p.currentStage})</span>
+                                </div>
+                              )}
+                              {p.producerId && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                  <strong style={{ color: 'var(--text-main)' }}>Producer:</strong> {getUserName(p.producerId)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
 
-                  {/* Productions */}
-                  {dayProds.map((p) => {
-                    const theme = getShowTheme(p.title, p.type);
-                    const isFilmingToday = p.filmingDate === dayStr;
-                    const isEditingToday = p.editingDate === dayStr;
+                    {/* Dedicated Video Editor Shift Workload section in Cards View */}
+                    <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '2px solid var(--border-color, #334155)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            background: 'rgba(192, 38, 211, 0.15)',
+                            color: '#e879f9',
+                          }}
+                        >
+                          <Scissors size={15} />
+                        </span>
+                        <div>
+                          <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                            Video Editors — Tasks on Shift ({dayStr})
+                          </h3>
+                          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+                            Task queues assigned for completion during today&apos;s editing shift (pure shift queue, no rigid hour slots)
+                          </p>
+                        </div>
+                      </div>
 
-                    return (
                       <div
-                        key={p.id}
-                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
                         style={{
-                          padding: '1rem',
-                          borderRadius: '10px',
-                          background: theme.bgDark,
-                          border: `1px solid ${theme.border}`,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                          gap: '1rem',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                              <span
+                        {activeEditors.map((ed) => {
+                          const shiftTasks = getEditorShiftTasks(ed.id, dayStr);
+
+                          return (
+                            <div
+                              key={`day-ed-card-${ed.id}`}
+                              style={{
+                                background: 'rgba(15, 23, 42, 0.6)',
+                                borderRadius: '10px',
+                                border: '1px solid var(--border-color, #334155)',
+                                padding: '0.85rem',
+                              }}
+                            >
+                              <div
                                 style={{
-                                  fontSize: '10px',
-                                  fontWeight: 800,
-                                  padding: '2px 7px',
-                                  borderRadius: '4px',
-                                  background: theme.badgeBg,
-                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  paddingBottom: '0.6rem',
+                                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                                  marginBottom: '0.75rem',
                                 }}
                               >
-                                {p.type}
-                              </span>
-                              {p.location && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#f0abfc' }}>
+                                    {ed.fullName || ed.name}
+                                  </span>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                                    ({ed.jobFunction?.replace(/_/g, ' ')})
+                                  </span>
+                                </div>
                                 <span
                                   style={{
                                     fontSize: '10px',
-                                    fontWeight: 700,
-                                    color: !requiresStudio(p.location)
-                                      ? '#34d399'
-                                      : p.location === 'STUDIO_REMOTE_GUEST'
-                                      ? '#38bdf8'
-                                      : '#60a5fa',
+                                    fontWeight: 800,
+                                    padding: '2px 7px',
+                                    borderRadius: '10px',
+                                    background: 'rgba(192, 38, 211, 0.25)',
+                                    color: '#f5d0fe',
                                   }}
                                 >
-                                  {p.location === 'STUDIO_REMOTE_GUEST'
-                                    ? 'STUDIO + REMOTE GUEST'
-                                    : !requiresStudio(p.location)
-                                    ? 'FULLY REMOTE'
-                                    : 'IN STUDIO'}
+                                  {shiftTasks.length} {shiftTasks.length === 1 ? 'task' : 'tasks'}
                                 </span>
-                              )}
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                Stage: <strong>{p.currentStage}</strong>
-                              </span>
-                            </div>
-                            <h4 style={{ fontSize: '15px', fontWeight: 800, color: theme.textDark, margin: '4px 0' }}>
-                              {p.title}
-                            </h4>
-                          </div>
+                              </div>
 
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenProduction(p.id);
-                            }}
-                            className="btn btn-secondary btn-sm"
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}
-                          >
-                            <span>Open Tasks</span>
-                            <ExternalLink size={12} />
-                          </button>
-                        </div>
-
-                        {/* Timing and crew details */}
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                            gap: '0.6rem',
-                            marginTop: '0.75rem',
-                            paddingTop: '0.75rem',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                          }}
-                        >
-                          {isFilmingToday && (
-                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              <strong style={{ color: 'var(--text-main)' }}>Filming Time:</strong>{' '}
-                              {p.filmingTime || '10:00 IDT'}
-                            </div>
-                          )}
-                          {p.editorId && (
-                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              <strong style={{ color: 'var(--text-main)' }}>Editor:</strong> {getUserName(p.editorId)}{' '}
-                              <span style={{ fontSize: '11px', color: '#e879f9', fontWeight: 600 }}>({p.currentStage})</span>
-                            </div>
-                          )}
-                          {p.producerId && (
-                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              <strong style={{ color: 'var(--text-main)' }}>Producer:</strong> {getUserName(p.producerId)}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Dedicated Video Editor Shift Workload section in Day View */}
-                <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '2px solid var(--border-color, #334155)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
-                        background: 'rgba(192, 38, 211, 0.15)',
-                        color: '#e879f9',
-                      }}
-                    >
-                      <Scissors size={15} />
-                    </span>
-                    <div>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-                        Video Editors — Tasks on Shift ({dayStr})
-                      </h3>
-                      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-                        Task queues assigned for completion during today&apos;s editing shift (no rigid hour slots)
-                      </p>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                      gap: '1rem',
-                    }}
-                  >
-                    {activeEditors.map((ed) => {
-                      const shiftTasks = getEditorShiftTasks(ed.id, dayStr);
-
-                      return (
-                        <div
-                          key={`day-ed-${ed.id}`}
-                          style={{
-                            background: 'rgba(15, 23, 42, 0.6)',
-                            borderRadius: '10px',
-                            border: '1px solid var(--border-color, #334155)',
-                            padding: '0.85rem',
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '0.75rem',
-                              paddingBottom: '0.5rem',
-                              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Scissors size={13} color="#e879f9" />
-                              <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>{ed.name}</strong>
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>({ed.jobFunction || 'Editor'})</span>
-                            </div>
-                            <span
-                              style={{
-                                fontSize: '10px',
-                                fontWeight: 800,
-                                background: 'rgba(192, 38, 211, 0.2)',
-                                color: '#f5d0fe',
-                                padding: '2px 7px',
-                                borderRadius: '10px',
-                              }}
-                            >
-                              {shiftTasks.length} {shiftTasks.length === 1 ? 'task' : 'tasks'}
-                            </span>
-                          </div>
-
-                          {shiftTasks.length === 0 ? (
-                            <div
-                              style={{
-                                padding: '16px 10px',
-                                textAlign: 'center',
-                                borderRadius: '6px',
-                                border: '1px dashed rgba(51, 65, 85, 0.6)',
-                                color: 'var(--text-secondary)',
-                                fontSize: '11px',
-                                background: 'rgba(15, 23, 42, 0.3)',
-                              }}
-                            >
-                              No tasks scheduled on shift
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {shiftTasks.map((p, pIdx) => {
-                                const theme = getShowTheme(p.title, p.type);
-                                return (
-                                  <div
-                                    key={`day-ed-task-${p.id}`}
-                                    onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
-                                    style={{
-                                      borderRadius: '8px',
-                                      padding: '9px 10px',
-                                      background: theme.bgDark,
-                                      border: `1px solid ${theme.border}`,
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                        <span
-                                          style={{
-                                            fontSize: '9px',
-                                            fontWeight: 800,
-                                            padding: '1px 5px',
-                                            borderRadius: '3px',
-                                            background: '#e879f9',
-                                            color: '#000',
-                                          }}
-                                        >
-                                          #{pIdx + 1}
-                                        </span>
-                                        <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', background: theme.badgeBg, color: '#fff' }}>
-                                          {p.type}
-                                        </span>
+                              {shiftTasks.length === 0 ? (
+                                <div
+                                  style={{
+                                    padding: '16px 10px',
+                                    textAlign: 'center',
+                                    borderRadius: '6px',
+                                    border: '1px dashed rgba(51, 65, 85, 0.6)',
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '11px',
+                                    background: 'rgba(15, 23, 42, 0.3)',
+                                  }}
+                                >
+                                  No tasks scheduled on shift
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {shiftTasks.map((p, pIdx) => {
+                                    const theme = getShowTheme(p.title, p.type);
+                                    return (
+                                      <div
+                                        key={`day-ed-task-card-${p.id}`}
+                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                        style={{
+                                          borderRadius: '8px',
+                                          padding: '9px 10px',
+                                          background: theme.bgDark,
+                                          border: `1px solid ${theme.border}`,
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                            <span
+                                              style={{
+                                                fontSize: '9px',
+                                                fontWeight: 800,
+                                                padding: '1px 5px',
+                                                borderRadius: '3px',
+                                                background: '#e879f9',
+                                                color: '#000',
+                                              }}
+                                            >
+                                              #{pIdx + 1}
+                                            </span>
+                                            <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', background: theme.badgeBg, color: '#fff' }}>
+                                              {p.type}
+                                            </span>
+                                          </div>
+                                          <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                            {p.currentStage}
+                                          </span>
+                                        </div>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark }}>
+                                          {p.title}
+                                        </div>
                                       </div>
-                                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                                        {p.currentStage}
-                                      </span>
-                                    </div>
-                                    <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark }}>
-                                      {p.title}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            );
-            })()}
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* VIEW MODE 3: MONTH OVERVIEW */}
       {viewMode === 'month' && (

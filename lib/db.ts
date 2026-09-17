@@ -444,6 +444,10 @@ function generateSeedProductions(): Production[] {
   const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000).toISOString().split('T')[0];
   const yesterday = new Date(now.getTime() - 24 * 3600 * 1000).toISOString().split('T')[0];
   const twoDaysAgo = new Date(now.getTime() - 48 * 3600 * 1000).toISOString().split('T')[0];
+  const yesterdayAt11 = `${yesterday}T11:20:00Z`;
+  const yesterdayAt14 = `${yesterday}T14:35:00Z`;
+  const yesterdayAt18 = `${yesterday}T18:15:00Z`;
+  const todayAt12 = `${today}T12:40:00Z`;
 
   return [
     // 1. One production filming today
@@ -458,6 +462,8 @@ function generateSeedProductions(): Production[] {
       currentStage: 'FILMING',
       filmingDate: today,
       filmingTime: '10:30',
+      location: 'IN_STUDIO',
+      recordingType: 'IN_STUDIO',
       editingDeadline: tomorrow,
       publicationDeadline: tomorrow,
       createdById: 'usr_zach_producer',
@@ -509,7 +515,7 @@ function generateSeedProductions(): Production[] {
         url: 'https://dropbox.com/jns/me-focus-ep89-raw',
         notes: '3 camera ISOs and stereo boom audio uploaded to EditShare.',
         uploadedById: 'usr_ahron_studio',
-        completedAt: yesterday,
+        completedAt: yesterdayAt14,
       },
       tasks: [
         {
@@ -520,9 +526,9 @@ function generateSeedProductions(): Production[] {
           assignedUserId: 'usr_yuri_admin',
           status: 'COMPLETED',
           priority: 'NORMAL',
-          completedAt: yesterday,
+          completedAt: yesterdayAt11,
           createdAt: twoDaysAgo,
-          updatedAt: yesterday,
+          updatedAt: yesterdayAt11,
         },
         {
           id: 'tsk_89_upload',
@@ -532,9 +538,9 @@ function generateSeedProductions(): Production[] {
           assignedUserId: 'usr_ahron_studio',
           status: 'COMPLETED',
           priority: 'NORMAL',
-          completedAt: yesterday,
+          completedAt: yesterdayAt14,
           createdAt: yesterday,
-          updatedAt: yesterday,
+          updatedAt: yesterdayAt14,
         },
         {
           id: 'tsk_89_notes',
@@ -972,7 +978,7 @@ function generateSeedProductions(): Production[] {
           assignedUserId: 'usr_ahron_studio',
           status: 'COMPLETED',
           priority: 'HIGH',
-          completedAt: today,
+          completedAt: todayAt12,
           createdAt: yesterday,
           updatedAt: today,
         },
@@ -1005,7 +1011,7 @@ function generateSeedProductions(): Production[] {
       filmingDate: twoDaysAgo,
       editingDeadline: yesterday,
       publicationDeadline: yesterday,
-      publishedAt: yesterday,
+      publishedAt: yesterdayAt18,
       publishedByUserId: 'usr_zach_producer',
       youtubeUrl: 'https://youtube.com/watch?v=the_quad_129_demo',
       dropboxUrl: 'https://dropbox.com/jns/master/the_quad_129_master.mov',

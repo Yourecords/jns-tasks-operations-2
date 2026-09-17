@@ -29,7 +29,7 @@ import {
   Lock
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
-import { Production, Comment, AuditLog, RevisionCycle } from '@/lib/types';
+import { Production, ProductionTask, Comment, AuditLog, RevisionCycle } from '@/lib/types';
 import { isEligibleEditor } from '@/lib/utils';
 import WorkflowBreadcrumb from '@/components/WorkflowBreadcrumb';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
@@ -270,6 +270,27 @@ export default function ProductionDetailPage() {
     } finally {
       setDeleteSubtaskLoading(false);
     }
+  };
+
+  const formatTaskSubmission = (task: ProductionTask) => {
+    const raw =
+      task.completedAt ||
+      (task.status === 'COMPLETED'
+        ? task.stageName === 'FILMING' && production.filmingDate
+          ? `${production.filmingDate}${production.filmingTime ? `T${production.filmingTime}:00` : ''}`
+          : task.updatedAt
+        : undefined);
+    if (!raw) return 'Submitted: Completed';
+    if (raw.includes(' at ')) {
+      return `Submitted: ${raw}`;
+    }
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return `Submitted: ${raw}`;
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const hasTime = raw.includes('T') || raw.includes(':');
+    if (!hasTime) return `Submitted: ${dateStr}`;
+    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `Submitted: ${dateStr} at ${timeStr} IDT`;
   };
 
   const activeCycle = production.revisionCycles[production.revisionCycles.length - 1];
@@ -1289,7 +1310,7 @@ export default function ProductionDetailPage() {
                     <th>Task Title</th>
                     <th>Stage</th>
                     <th>Assigned To</th>
-                    <th>Due Date</th>
+                    <th>Due Date & Submission Time</th>
                     <th>Status</th>
                     <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
@@ -1316,9 +1337,35 @@ export default function ProductionDetailPage() {
                         </span>
                       </td>
                       <td>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {task.dueDate || 'N/A'}
-                        </span>
+                        <div style={{ fontSize: '11px', color: 'var(--text-main)', fontWeight: 600 }}>
+                          {task.dueDate ? `Due: ${task.dueDate}` : 'No deadline'}
+                        </div>
+                        {task.completedAt || task.status === 'COMPLETED' ? (
+                          <div
+                            style={{
+                              fontSize: '10.5px',
+                              color: '#34d399',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              marginTop: '3px',
+                              fontWeight: 600,
+                            }}
+                            title={`Completed and submitted on ${task.completedAt ? new Date(task.completedAt).toLocaleString() : 'Completed'}`}
+                          >
+                            <CheckCircle2 size={11} color="#34d399" />
+                            <span>{formatTaskSubmission(task)}</span>
+                          </div>
+                        ) : task.status === 'IN_PROGRESS' ? (
+                          <div style={{ fontSize: '10px', color: '#60a5fa', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={10} />
+                            <span>In progress (Awaiting submission)</span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            Pending
+                          </div>
+                        )}
                       </td>
                       <td>
                         <span
