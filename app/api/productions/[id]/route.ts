@@ -12,6 +12,8 @@ import {
   markPublished,
   updateRentalStep,
   deleteProduction,
+  reassignProductionEditor,
+  rescheduleProductionFilming,
 } from '@/lib/workflow';
 
 type RouteContext = { params: Promise<{ id: string }> | { id: string } };
@@ -97,6 +99,24 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
       case 'UPDATE_RENTAL_STEP':
         updated = await updateRentalStep(id, payload.step, payload, user);
+        break;
+
+      case 'REASSIGN_EDITOR':
+        updated = await reassignProductionEditor(
+          id,
+          payload?.editorId || body.editorId || payload?.targetEditorId || body.targetEditorId,
+          payload?.editingDate || body.editingDate,
+          user
+        );
+        break;
+
+      case 'RESCHEDULE_FILMING':
+        updated = await rescheduleProductionFilming(
+          id,
+          payload?.filmingDate || body.filmingDate,
+          payload?.filmingTime || body.filmingTime,
+          user
+        );
         break;
 
       default:

@@ -93,6 +93,7 @@ export interface ProductionTask {
   status: TaskStatus;
   priority: Priority;
   dueDate?: string;
+  dueTime?: string;
   completedAt?: string;
   blockedReason?: string;
   blockedHelper?: string;

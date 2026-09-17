@@ -28,11 +28,12 @@ import {
   Radio,
   FileText,
   ArrowLeft,
+  GripVertical,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, Meeting, Show, User } from '@/lib/types';
 import QuickActionModal from '@/components/QuickActionModal';
-import { requiresStudio } from '@/lib/utils';
+import { requiresStudio, findStudioConflict } from '@/lib/utils';
 import {
   SHOW_THEMES,
   getShowTheme,
@@ -76,6 +77,219 @@ export default function ProductionCalendarPage() {
     type: 'PRODUCTION' | 'MEETING';
     data: Production | Meeting;
   } | null>(null);
+
+  // Drag and Drop States
+  const [draggedItem, setDraggedItem] = useState<
+    | {
+        type: 'EDITING_TASK';
+        productionId: string;
+        currentEditorId?: string;
+        currentDate: string;
+        title: string;
+      }
+    | {
+        type: 'FILMING_TASK';
+        productionId: string;
+        currentFilmingDate: string;
+        currentFilmingTime?: string;
+        location?: string;
+        title: string;
+      }
+    | null
+  >(null);
+
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Compute new filming time preserving shoot duration
+  const computeNewFilmingTime = (originalTime: string | undefined, newStartSlot: string): string => {
+    const startMinutes = parseMinutesFromMidnight(newStartSlot);
+    let duration = 90; // Default 1.5h studio shoot
+    if (originalTime) {
+      const parts = originalTime.split('-').map((s) => s.trim());
+      if (parts.length === 2) {
+        const origStart = parseMinutesFromMidnight(parts[0]);
+        const origEnd = parseMinutesFromMidnight(parts[1]);
+        if (origEnd > origStart) {
+          duration = origEnd - origStart;
+        }
+      }
+    }
+    const newEndMinutes = startMinutes + duration;
+    const endHour = Math.floor(newEndMinutes / 60);
+    const endMin = newEndMinutes % 60;
+    const endStr = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+    return `${newStartSlot} - ${endStr}`;
+  };
+
+  // Editing Task Drag Handlers
+  const handleDragStartEditing = (
+    e: React.DragEvent,
+    production: Production,
+    currentEditorId: string,
+    currentDate: string
+  ) => {
+    const item = {
+      type: 'EDITING_TASK' as const,
+      productionId: production.id,
+      currentEditorId,
+      currentDate,
+      title: production.title,
+    };
+    setDraggedItem(item);
+    e.dataTransfer.setData('application/json', JSON.stringify(item));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDropOnEditor = async (targetEditorId: string, targetDate: string) => {
+    setDragOverKey(null);
+    if (!draggedItem || draggedItem.type !== 'EDITING_TASK') return;
+
+    const { productionId, currentEditorId, currentDate, title } = draggedItem;
+    setDraggedItem(null);
+
+    // If dropped on the same editor and same date, no-op
+    if (currentEditorId === targetEditorId && currentDate === targetDate) return;
+
+    const targetEditor = allUsers.find((u) => u.id === targetEditorId);
+    const targetEditorName = targetEditor ? targetEditor.name : 'new editor';
+
+    // Optimistic UI update
+    setProductions((prev) =>
+      prev.map((p) => {
+        if (p.id === productionId) {
+          return {
+            ...p,
+            editorId: targetEditorId,
+            editingDate: targetDate,
+            tasks: Array.isArray(p.tasks)
+              ? p.tasks.map((t) => {
+                  const isEdit =
+                    t.stageName.includes('EDIT') ||
+                    t.stageName.includes('DRAFT') ||
+                    t.stageName.includes('ROUGH') ||
+                    t.stageName.includes('REVISION') ||
+                    t.assignedUserId === currentEditorId;
+                  return isEdit ? { ...t, assignedUserId: targetEditorId, dueDate: targetDate } : t;
+                })
+              : p.tasks,
+          };
+        }
+        return p;
+      })
+    );
+
+    showToast(`✓ Reassigned "${title}" to editor ${targetEditorName}${targetDate ? ` (${targetDate})` : ''}`, 'success');
+
+    try {
+      const res = await fetch(`/api/productions/${productionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'REASSIGN_EDITOR',
+          payload: {
+            editorId: targetEditorId,
+            editingDate: targetDate,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to reassign editor');
+      }
+    } catch (err: any) {
+      showToast(`Failed to update editor: ${err.message}`, 'error');
+      fetchCalendarData();
+    }
+  };
+
+  // Filming Task Drag Handlers
+  const handleDragStartFilming = (e: React.DragEvent, production: Production) => {
+    const item = {
+      type: 'FILMING_TASK' as const,
+      productionId: production.id,
+      currentFilmingDate: production.filmingDate || '',
+      currentFilmingTime: production.filmingTime,
+      location: production.location,
+      title: production.title,
+    };
+    setDraggedItem(item);
+    e.dataTransfer.setData('application/json', JSON.stringify(item));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDropOnFilmingSlot = async (targetDate: string, targetSlotHour: string, isStudioTrack: boolean) => {
+    setDragOverKey(null);
+    if (!draggedItem || draggedItem.type !== 'FILMING_TASK') return;
+
+    const { productionId, currentFilmingDate, currentFilmingTime, location, title } = draggedItem;
+    setDraggedItem(null);
+
+    const newFilmingTime = computeNewFilmingTime(currentFilmingTime, targetSlotHour);
+
+    // If same date and same time, no-op
+    if (currentFilmingDate === targetDate && currentFilmingTime === newFilmingTime) return;
+
+    // Check studio conflict if this production requires the physical studio
+    if (requiresStudio(location)) {
+      const conflict = findStudioConflict(productions, targetDate, newFilmingTime, location || 'IN_STUDIO', productionId);
+      if (conflict.hasConflict && conflict.conflictingProduction) {
+        showToast(
+          `⚠ Studio Conflict: "${conflict.conflictingProduction.title}" is already scheduled in the studio at ${conflict.conflictingProduction.filmingTime || targetSlotHour}. Physical studio cannot be double-booked.`,
+          'error'
+        );
+        return;
+      }
+    }
+
+    // Optimistic UI update
+    setProductions((prev) =>
+      prev.map((p) => {
+        if (p.id === productionId) {
+          return {
+            ...p,
+            filmingDate: targetDate,
+            filmingTime: newFilmingTime,
+          };
+        }
+        return p;
+      })
+    );
+
+    showToast(`✓ Rescheduled "${title}" to ${targetDate} at ${newFilmingTime}`, 'success');
+
+    try {
+      const res = await fetch(`/api/productions/${productionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'RESCHEDULE_FILMING',
+          payload: {
+            filmingDate: targetDate,
+            filmingTime: newFilmingTime,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to reschedule filming');
+      }
+    } catch (err: any) {
+      showToast(`Failed to reschedule filming: ${err.message}`, 'error');
+      fetchCalendarData();
+    }
+  };
 
   // Fetch calendar data
   const fetchCalendarData = async () => {
@@ -972,159 +1186,271 @@ export default function ProductionCalendarPage() {
                             ) : (
                               <>
                                 {/* FILMING: STUDIO CELL */}
-                                <td
-                                  style={{
-                                    padding: '3px',
-                                    borderRight: '1px solid var(--border-color, #334155)',
-                                    verticalAlign: 'top',
-                                    background: day.isToday ? 'rgba(212, 160, 23, 0.02)' : 'transparent',
-                                    position: 'relative',
-                                  }}
-                                >
-                                  {studioShoots.map((p) => {
-                                    const theme = getShowTheme(p.title, p.type);
-                                    return (
-                                      <div
-                                        key={p.id}
-                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
-                                        style={{
-                                          borderRadius: '6px',
-                                          padding: '5px 7px',
-                                          marginBottom: '3px',
-                                          background: theme.bgDark,
-                                          border: `1px solid ${theme.border}`,
-                                          cursor: 'pointer',
-                                          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                                        }}
-                                        title={`${p.title}\nTime: ${p.filmingTime || '10:00'}\nSetup: ${
-                                          p.location === 'STUDIO_REMOTE_GUEST'
-                                            ? 'Studio + Remote Interviewee'
-                                            : 'In Studio'
-                                        }\nProducer: ${getUserName(p.producerId)}`}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px', flexWrap: 'wrap' }}>
-                                          <span
-                                            style={{
-                                              fontSize: '9px',
-                                              fontWeight: 800,
-                                              padding: '1px 4px',
-                                              borderRadius: '3px',
-                                              background: theme.badgeBg,
-                                              color: '#fff',
-                                            }}
-                                          >
-                                            {p.filmingTime || slotHour}
-                                          </span>
-                                          {p.type === 'RENTAL' ? (
-                                            <span style={{ fontSize: '9px', color: '#c084fc', fontWeight: 700 }}>
-                                              RENTAL
-                                            </span>
-                                          ) : p.location === 'STUDIO_REMOTE_GUEST' ? (
-                                            <span
-                                              style={{
-                                                fontSize: '8.5px',
-                                                color: '#38bdf8',
-                                                background: 'rgba(14, 165, 233, 0.2)',
-                                                padding: '1px 4px',
-                                                borderRadius: '3px',
-                                                fontWeight: 700,
-                                                border: '1px solid rgba(14, 165, 233, 0.4)',
-                                              }}
-                                              title="Studio + Remote Interviewee"
-                                            >
-                                              + Remote Guest
-                                            </span>
-                                          ) : null}
-                                        </div>
+                                {(() => {
+                                  const cellKey = `board-studio-${day.dateString}-${slotHour}`;
+                                  const isOver = dragOverKey === cellKey;
+                                  const isConflictOnHover =
+                                    isOver &&
+                                    draggedItem?.type === 'FILMING_TASK' &&
+                                    requiresStudio(draggedItem.location) &&
+                                    findStudioConflict(
+                                      productions,
+                                      day.dateString,
+                                      computeNewFilmingTime(draggedItem.currentFilmingTime, slotHour),
+                                      draggedItem.location || 'IN_STUDIO',
+                                      draggedItem.productionId
+                                    ).hasConflict;
+
+                                  return (
+                                    <td
+                                      onDragOver={(e) => {
+                                        if (draggedItem?.type === 'FILMING_TASK') {
+                                          e.preventDefault();
+                                          e.dataTransfer.dropEffect = 'move';
+                                          setDragOverKey(cellKey);
+                                        }
+                                      }}
+                                      onDragLeave={() => {
+                                        if (dragOverKey === cellKey) setDragOverKey(null);
+                                      }}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        handleDropOnFilmingSlot(day.dateString, slotHour, true);
+                                      }}
+                                      style={{
+                                        padding: '3px',
+                                        borderRight: '1px solid var(--border-color, #334155)',
+                                        verticalAlign: 'top',
+                                        position: 'relative',
+                                        outline: isOver ? (isConflictOnHover ? '2px dashed #ef4444' : '2px dashed #22c55e') : undefined,
+                                        background: isOver
+                                          ? isConflictOnHover
+                                            ? 'rgba(239, 68, 68, 0.22)'
+                                            : 'rgba(34, 197, 94, 0.18)'
+                                          : day.isToday
+                                          ? 'rgba(212, 160, 23, 0.02)'
+                                          : 'transparent',
+                                        transition: 'background 0.15s ease, outline 0.15s ease',
+                                      }}
+                                    >
+                                      {isOver && isConflictOnHover && (
                                         <div
                                           style={{
-                                            fontSize: '11px',
-                                            fontWeight: 700,
-                                            color: theme.textDark,
-                                            marginTop: '3px',
-                                            lineHeight: 1.2,
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            display: '-webkit-box',
-                                            WebkitLineClamp: 2,
-                                            WebkitBoxOrient: 'vertical',
+                                            position: 'absolute',
+                                            top: '2px',
+                                            left: '2px',
+                                            right: '2px',
+                                            zIndex: 20,
+                                            padding: '2px 4px',
+                                            borderRadius: '3px',
+                                            background: '#b91c1c',
+                                            color: '#fff',
+                                            fontSize: '8px',
+                                            fontWeight: 800,
+                                            textAlign: 'center',
+                                            pointerEvents: 'none',
                                           }}
                                         >
-                                          {p.title}
+                                          STUDIO OCCUPIED
                                         </div>
-                                        {p.producerId && (
-                                          <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                            Prod: {getUserName(p.producerId)}
+                                      )}
+                                      {studioShoots.map((p) => {
+                                        const theme = getShowTheme(p.title, p.type);
+                                        const isDraggingThis = draggedItem?.productionId === p.id;
+
+                                        return (
+                                          <div
+                                            key={p.id}
+                                            draggable={true}
+                                            onDragStart={(e) => handleDragStartFilming(e, p)}
+                                            onDragEnd={() => {
+                                              setDraggedItem(null);
+                                              setDragOverKey(null);
+                                            }}
+                                            onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                            style={{
+                                              borderRadius: '6px',
+                                              padding: '5px 7px',
+                                              marginBottom: '3px',
+                                              background: theme.bgDark,
+                                              border: `1px solid ${theme.border}`,
+                                              cursor: 'grab',
+                                              opacity: isDraggingThis ? 0.4 : 1,
+                                              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                                            }}
+                                            title={`Drag to reschedule filming slot\n${p.title}\nTime: ${p.filmingTime || '10:00'}\nSetup: ${
+                                              p.location === 'STUDIO_REMOTE_GUEST'
+                                                ? 'Studio + Remote Interviewee'
+                                                : 'In Studio'
+                                            }\nProducer: ${getUserName(p.producerId)}`}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px', flexWrap: 'wrap' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                <GripVertical size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                                                <span
+                                                  style={{
+                                                    fontSize: '9px',
+                                                    fontWeight: 800,
+                                                    padding: '1px 4px',
+                                                    borderRadius: '3px',
+                                                    background: theme.badgeBg,
+                                                    color: '#fff',
+                                                  }}
+                                                >
+                                                  {p.filmingTime || slotHour}
+                                                </span>
+                                              </div>
+                                              {p.type === 'RENTAL' ? (
+                                                <span style={{ fontSize: '9px', color: '#c084fc', fontWeight: 700 }}>
+                                                  RENTAL
+                                                </span>
+                                              ) : p.location === 'STUDIO_REMOTE_GUEST' ? (
+                                                <span
+                                                  style={{
+                                                    fontSize: '8.5px',
+                                                    color: '#38bdf8',
+                                                    background: 'rgba(14, 165, 233, 0.2)',
+                                                    padding: '1px 4px',
+                                                    borderRadius: '3px',
+                                                    fontWeight: 700,
+                                                    border: '1px solid rgba(14, 165, 233, 0.4)',
+                                                  }}
+                                                  title="Studio + Remote Interviewee"
+                                                >
+                                                  + Remote Guest
+                                                </span>
+                                              ) : null}
+                                            </div>
+                                            <div
+                                              style={{
+                                                fontSize: '11px',
+                                                fontWeight: 700,
+                                                color: theme.textDark,
+                                                marginTop: '3px',
+                                                lineHeight: 1.2,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                display: '-webkit-box',
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: 'vertical',
+                                              }}
+                                            >
+                                              {p.title}
+                                            </div>
+                                            {p.producerId && (
+                                              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                Prod: {getUserName(p.producerId)}
+                                              </div>
+                                            )}
                                           </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </td>
+                                        );
+                                      })}
+                                    </td>
+                                  );
+                                })()}
 
                                 {/* FILMING: REMOTE / FIELD CELL */}
-                                <td
-                                  style={{
-                                    padding: '3px',
-                                    borderRight: '1px solid var(--border-color, #334155)',
-                                    verticalAlign: 'top',
-                                    background: day.isToday ? 'rgba(212, 160, 23, 0.02)' : 'transparent',
-                                  }}
-                                >
-                                  {remoteShoots.map((p) => {
-                                    const theme = getShowTheme(p.title, p.type);
-                                    return (
-                                      <div
-                                        key={p.id}
-                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
-                                        style={{
-                                          borderRadius: '6px',
-                                          padding: '5px 7px',
-                                          marginBottom: '3px',
-                                          background: 'rgba(16, 185, 129, 0.18)',
-                                          border: '1px solid #10b981',
-                                          cursor: 'pointer',
-                                          transition: 'transform 0.15s ease',
-                                        }}
-                                        title={`Remote Shoot: ${p.title}\nTime: ${p.filmingTime || '10:00'}\nProducer: ${getUserName(p.producerId)}`}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                          <span
-                                            style={{
-                                              fontSize: '9px',
-                                              fontWeight: 800,
-                                              padding: '1px 4px',
-                                              borderRadius: '3px',
-                                              background: '#059669',
-                                              color: '#fff',
+                                {(() => {
+                                  const cellKey = `board-remote-${day.dateString}-${slotHour}`;
+                                  const isOver = dragOverKey === cellKey;
+
+                                  return (
+                                    <td
+                                      onDragOver={(e) => {
+                                        if (draggedItem?.type === 'FILMING_TASK') {
+                                          e.preventDefault();
+                                          e.dataTransfer.dropEffect = 'move';
+                                          setDragOverKey(cellKey);
+                                        }
+                                      }}
+                                      onDragLeave={() => {
+                                        if (dragOverKey === cellKey) setDragOverKey(null);
+                                      }}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        handleDropOnFilmingSlot(day.dateString, slotHour, false);
+                                      }}
+                                      style={{
+                                        padding: '3px',
+                                        borderRight: '1px solid var(--border-color, #334155)',
+                                        verticalAlign: 'top',
+                                        outline: isOver ? '2px dashed #22c55e' : undefined,
+                                        background: isOver
+                                          ? 'rgba(34, 197, 94, 0.18)'
+                                          : day.isToday
+                                          ? 'rgba(212, 160, 23, 0.02)'
+                                          : 'transparent',
+                                        transition: 'background 0.15s ease, outline 0.15s ease',
+                                      }}
+                                    >
+                                      {remoteShoots.map((p) => {
+                                        const theme = getShowTheme(p.title, p.type);
+                                        const isDraggingThis = draggedItem?.productionId === p.id;
+
+                                        return (
+                                          <div
+                                            key={p.id}
+                                            draggable={true}
+                                            onDragStart={(e) => handleDragStartFilming(e, p)}
+                                            onDragEnd={() => {
+                                              setDraggedItem(null);
+                                              setDragOverKey(null);
                                             }}
+                                            onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                            style={{
+                                              borderRadius: '6px',
+                                              padding: '5px 7px',
+                                              marginBottom: '3px',
+                                              background: 'rgba(16, 185, 129, 0.18)',
+                                              border: '1px solid #10b981',
+                                              cursor: 'grab',
+                                              opacity: isDraggingThis ? 0.4 : 1,
+                                              transition: 'transform 0.15s ease',
+                                            }}
+                                            title={`Drag to reschedule remote filming\nRemote Shoot: ${p.title}\nTime: ${p.filmingTime || '10:00'}\nProducer: ${getUserName(p.producerId)}`}
                                           >
-                                            {p.filmingTime || slotHour}
-                                          </span>
-                                          <span style={{ fontSize: '9px', color: '#6ee7b7', fontWeight: 700 }}>
-                                            FIELD
-                                          </span>
-                                        </div>
-                                        <div
-                                          style={{
-                                            fontSize: '11px',
-                                            fontWeight: 700,
-                                            color: '#a7f3d0',
-                                            marginTop: '3px',
-                                            lineHeight: 1.2,
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            display: '-webkit-box',
-                                            WebkitLineClamp: 2,
-                                            WebkitBoxOrient: 'vertical',
-                                          }}
-                                        >
-                                          {p.title}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </td>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                <GripVertical size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                                                <span
+                                                  style={{
+                                                    fontSize: '9px',
+                                                    fontWeight: 800,
+                                                    padding: '1px 4px',
+                                                    borderRadius: '3px',
+                                                    background: '#059669',
+                                                    color: '#fff',
+                                                  }}
+                                                >
+                                                  {p.filmingTime || slotHour}
+                                                </span>
+                                              </div>
+                                              <span style={{ fontSize: '9px', color: '#6ee7b7', fontWeight: 700 }}>
+                                                FIELD
+                                              </span>
+                                            </div>
+                                            <div
+                                              style={{
+                                                fontSize: '11px',
+                                                fontWeight: 700,
+                                                color: '#a7f3d0',
+                                                marginTop: '3px',
+                                                lineHeight: 1.2,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                display: '-webkit-box',
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: 'vertical',
+                                              }}
+                                            >
+                                              {p.title}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </td>
+                                  );
+                                })()}
                               </>
                             )}
 
@@ -1132,11 +1458,27 @@ export default function ProductionCalendarPage() {
                             {slotIndex === 0 &&
                               activeEditors.map((ed, idx) => {
                                 const shiftTasks = getEditorShiftTasks(ed.id, day.dateString);
+                                const cellKey = `board-editor-${day.dateString}-${ed.id}`;
+                                const isOver = dragOverKey === cellKey && draggedItem?.type === 'EDITING_TASK';
 
                                 return (
                                   <td
-                                    key={`${day.dateString}-${ed.id}-shift`}
+                                    key={cellKey}
                                     rowSpan={TIME_SLOTS.length}
+                                    onDragOver={(e) => {
+                                      if (draggedItem?.type === 'EDITING_TASK') {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                        setDragOverKey(cellKey);
+                                      }
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dragOverKey === cellKey) setDragOverKey(null);
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      handleDropOnEditor(ed.id, day.dateString);
+                                    }}
                                     style={{
                                       padding: '6px 5px',
                                       borderRight:
@@ -1144,9 +1486,15 @@ export default function ProductionCalendarPage() {
                                           ? '2px solid var(--border-color, #334155)'
                                           : '1px solid var(--border-color, #334155)',
                                       verticalAlign: 'top',
-                                      background: day.isToday ? 'rgba(212, 160, 23, 0.02)' : 'rgba(15, 23, 42, 0.22)',
+                                      outline: isOver ? '2px dashed #e879f9' : undefined,
+                                      background: isOver
+                                        ? 'rgba(192, 38, 211, 0.22)'
+                                        : day.isToday
+                                        ? 'rgba(212, 160, 23, 0.02)'
+                                        : 'rgba(15, 23, 42, 0.22)',
                                       width: '180px',
                                       minWidth: '150px',
+                                      transition: 'background 0.15s ease, outline 0.15s ease',
                                     }}
                                   >
                                     {/* Shift Queue Header */}
@@ -1182,25 +1530,27 @@ export default function ProductionCalendarPage() {
                                       </span>
                                     </div>
 
-                                    {/* Task list without any time durations */}
+                                    {/* Task list without any dedicated hour slots */}
                                     {shiftTasks.length === 0 ? (
                                       <div
                                         style={{
                                           padding: '14px 6px',
                                           textAlign: 'center',
                                           borderRadius: '6px',
-                                          border: '1px dashed rgba(51, 65, 85, 0.6)',
-                                          color: 'var(--text-secondary)',
+                                          border: isOver ? '1.5px dashed #e879f9' : '1px dashed rgba(51, 65, 85, 0.6)',
+                                          color: isOver ? '#e879f9' : 'var(--text-secondary)',
                                           fontSize: '10px',
-                                          background: 'rgba(15, 23, 42, 0.2)',
+                                          background: isOver ? 'rgba(192, 38, 211, 0.15)' : 'rgba(15, 23, 42, 0.2)',
+                                          transition: 'all 0.15s ease',
                                         }}
                                       >
-                                        No tasks on shift
+                                        {isOver ? 'Drop task to assign here' : 'No tasks on shift'}
                                       </div>
                                     ) : (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                         {shiftTasks.map((p, pIdx) => {
                                           const theme = getShowTheme(p.title, p.type);
+                                          const isDraggingThis = draggedItem?.productionId === p.id;
                                           const specificTask =
                                             p.tasks?.find((t) => t.assignedUserId === ed.id && t.status !== 'COMPLETED') ||
                                             p.tasks?.find((t) => t.stageName.includes('EDIT') || t.stageName.includes('ROUGH') || t.stageName.includes('DRAFT'));
@@ -1208,23 +1558,31 @@ export default function ProductionCalendarPage() {
                                           return (
                                             <div
                                               key={`shift-task-${p.id}`}
+                                              draggable={true}
+                                              onDragStart={(e) => handleDragStartEditing(e, p, ed.id, day.dateString)}
+                                              onDragEnd={() => {
+                                                setDraggedItem(null);
+                                                setDragOverKey(null);
+                                              }}
                                               onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
                                               style={{
-                                                borderRadius: '7px',
-                                                padding: '8px 8px',
+                                                borderRadius: '8px',
+                                                padding: '8px 10px',
                                                 background: theme.bgDark,
                                                 border: `1px solid ${theme.border}`,
-                                                cursor: 'pointer',
-                                                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                                                cursor: 'grab',
+                                                opacity: isDraggingThis ? 0.4 : 1,
+                                                transition: 'all 0.15s ease',
                                                 boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
                                               }}
-                                              title={`Shift Task #${pIdx + 1}: ${p.title}\nStage: ${p.currentStage}\nPriority: ${p.priority}\nClick to view production`}
+                                              title={`Drag to reassign editor\nShift Task #${pIdx + 1}: ${p.title}\nStage: ${p.currentStage}\nPriority: ${p.priority}\nClick to view production`}
                                             >
-                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '3px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                  <GripVertical size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
                                                   <span
                                                     style={{
-                                                      fontSize: '9px',
+                                                      fontSize: '9.5px',
                                                       fontWeight: 800,
                                                       padding: '1px 5px',
                                                       borderRadius: '3px',
@@ -1742,7 +2100,7 @@ export default function ProductionCalendarPage() {
                         TIME
                       </th>
 
-                      {/* PHYSICAL STUDIO COLUMN */}
+                      {/* STUDIO COLUMN */}
                       <th
                         style={{
                           width: '320px',
@@ -1756,11 +2114,11 @@ export default function ProductionCalendarPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Video size={14} color="#60a5fa" />
                           <span style={{ fontSize: '12px', fontWeight: 800, color: '#93c5fd', letterSpacing: '0.04em' }}>
-                            PHYSICAL STUDIO (Jerusalem Studio A)
+                            Studio
                           </span>
                         </div>
                         <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                          In-Studio & Hybrid Guests (Exclusive physical facility access)
+                          In-Studio & Hybrid Guests
                         </div>
                       </th>
 
@@ -1902,122 +2260,236 @@ export default function ProductionCalendarPage() {
                             </td>
                           ) : (
                             <>
-                              <td
-                                style={{
-                                  padding: '4px 6px',
-                                  borderRight: '1px solid var(--border-color, #334155)',
-                                  verticalAlign: 'top',
-                                  background: hasStudioConflict ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
-                                }}
-                              >
-                                {hasStudioConflict && (
-                                  <div
+                              {/* Studio Filming Cell */}
+                              {(() => {
+                                const cellKey = `day-studio-${dayStr}-${slotHour}`;
+                                const isOver = dragOverKey === cellKey;
+                                const isConflictOnHover =
+                                  isOver &&
+                                  draggedItem?.type === 'FILMING_TASK' &&
+                                  requiresStudio(draggedItem.location) &&
+                                  findStudioConflict(
+                                    productions,
+                                    dayStr,
+                                    computeNewFilmingTime(draggedItem.currentFilmingTime, slotHour),
+                                    draggedItem.location || 'IN_STUDIO',
+                                    draggedItem.productionId
+                                  ).hasConflict;
+
+                                return (
+                                  <td
+                                    onDragOver={(e) => {
+                                      if (draggedItem?.type === 'FILMING_TASK') {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                        setDragOverKey(cellKey);
+                                      }
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dragOverKey === cellKey) setDragOverKey(null);
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      handleDropOnFilmingSlot(dayStr, slotHour, true);
+                                    }}
                                     style={{
                                       padding: '4px 6px',
-                                      borderRadius: '4px',
-                                      background: 'rgba(239, 68, 68, 0.25)',
-                                      border: '1px solid #ef4444',
-                                      color: '#fca5a5',
-                                      fontSize: '10px',
-                                      fontWeight: 800,
-                                      marginBottom: '4px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
+                                      borderRight: '1px solid var(--border-color, #334155)',
+                                      verticalAlign: 'top',
+                                      position: 'relative',
+                                      outline: isOver ? (isConflictOnHover ? '2px dashed #ef4444' : '2px dashed #22c55e') : undefined,
+                                      background: isOver
+                                        ? isConflictOnHover
+                                          ? 'rgba(239, 68, 68, 0.22)'
+                                          : 'rgba(34, 197, 94, 0.18)'
+                                        : hasStudioConflict
+                                        ? 'rgba(239, 68, 68, 0.12)'
+                                        : 'transparent',
+                                      transition: 'background 0.15s ease, outline 0.15s ease',
                                     }}
                                   >
-                                    <AlertCircle size={12} color="#ef4444" />
-                                    <span>STUDIO DOUBLE-BOOKING CONFLICT!</span>
-                                  </div>
-                                )}
-
-                                {studioShootsAtHour.length === 0 ? (
-                                  <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.3)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
-                                    Available
-                                  </div>
-                                ) : (
-                                  studioShootsAtHour.map((p) => {
-                                    const theme = getShowTheme(p.title, p.type);
-                                    return (
+                                    {isOver && isConflictOnHover && (
                                       <div
-                                        key={`single-studio-${p.id}`}
-                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
                                         style={{
-                                          borderRadius: '6px',
-                                          padding: '6px 8px',
-                                          marginBottom: '4px',
-                                          background: theme.bgDark,
-                                          border: `1px solid ${hasStudioConflict ? '#ef4444' : theme.border}`,
-                                          cursor: 'pointer',
-                                          transition: 'all 0.15s ease',
+                                          position: 'absolute',
+                                          top: '2px',
+                                          left: '2px',
+                                          right: '2px',
+                                          zIndex: 20,
+                                          padding: '2px 4px',
+                                          borderRadius: '3px',
+                                          background: '#b91c1c',
+                                          color: '#fff',
+                                          fontSize: '8px',
+                                          fontWeight: 800,
+                                          textAlign: 'center',
+                                          pointerEvents: 'none',
                                         }}
                                       >
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '3px', background: theme.badgeBg, color: '#fff' }}>
-                                            {p.filmingTime || slotHour}
-                                          </span>
-                                          {p.location === 'STUDIO_REMOTE_GUEST' && (
-                                            <span style={{ fontSize: '8.5px', color: '#38bdf8', background: 'rgba(14, 165, 233, 0.2)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, border: '1px solid rgba(14, 165, 233, 0.4)' }}>
-                                              + Remote Guest
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, marginTop: '2px' }}>
-                                          {p.title}
-                                        </div>
-                                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
-                                          <span>Prod: {getUserName(p.producerId)}</span>
-                                          {p.editorId && (
-                                            <span style={{ color: '#c084fc' }}>Ed: {getUserName(p.editorId)}</span>
-                                          )}
-                                        </div>
+                                        STUDIO OCCUPIED
                                       </div>
-                                    );
-                                  })
-                                )}
-                              </td>
+                                    )}
+
+                                    {hasStudioConflict && (
+                                      <div
+                                        style={{
+                                          padding: '4px 6px',
+                                          borderRadius: '4px',
+                                          background: 'rgba(239, 68, 68, 0.25)',
+                                          border: '1px solid #ef4444',
+                                          color: '#fca5a5',
+                                          fontSize: '10px',
+                                          fontWeight: 800,
+                                          marginBottom: '4px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                      >
+                                        <AlertCircle size={12} color="#ef4444" />
+                                        <span>STUDIO DOUBLE-BOOKING CONFLICT!</span>
+                                      </div>
+                                    )}
+
+                                    {studioShootsAtHour.length === 0 ? (
+                                      <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.3)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
+                                        {isOver ? 'Drop to schedule studio shoot' : 'Available'}
+                                      </div>
+                                    ) : (
+                                      studioShootsAtHour.map((p) => {
+                                        const theme = getShowTheme(p.title, p.type);
+                                        const isDraggingThis = draggedItem?.productionId === p.id;
+
+                                        return (
+                                          <div
+                                            key={`single-studio-${p.id}`}
+                                            draggable={true}
+                                            onDragStart={(e) => handleDragStartFilming(e, p)}
+                                            onDragEnd={() => {
+                                              setDraggedItem(null);
+                                              setDragOverKey(null);
+                                            }}
+                                            onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                            style={{
+                                              borderRadius: '6px',
+                                              padding: '6px 8px',
+                                              marginBottom: '4px',
+                                              background: theme.bgDark,
+                                              border: `1px solid ${hasStudioConflict ? '#ef4444' : theme.border}`,
+                                              cursor: 'grab',
+                                              opacity: isDraggingThis ? 0.4 : 1,
+                                              transition: 'all 0.15s ease',
+                                            }}
+                                            title="Drag to reschedule filming slot"
+                                          >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <GripVertical size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                                                <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '3px', background: theme.badgeBg, color: '#fff' }}>
+                                                  {p.filmingTime || slotHour}
+                                                </span>
+                                              </div>
+                                              {p.location === 'STUDIO_REMOTE_GUEST' && (
+                                                <span style={{ fontSize: '8.5px', color: '#38bdf8', background: 'rgba(14, 165, 233, 0.2)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, border: '1px solid rgba(14, 165, 233, 0.4)' }}>
+                                                  + Remote Guest
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, marginTop: '2px' }}>
+                                              {p.title}
+                                            </div>
+                                            <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                                              <span>Prod: {getUserName(p.producerId)}</span>
+                                              {p.editorId && (
+                                                <span style={{ color: '#c084fc' }}>Ed: {getUserName(p.editorId)}</span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </td>
+                                );
+                              })()}
 
                               {/* Remote Filming Cell */}
-                              <td
-                                style={{
-                                  padding: '4px 6px',
-                                  borderRight: '2px solid var(--border-color, #334155)',
-                                  verticalAlign: 'top',
-                                }}
-                              >
-                                {remoteShootsAtHour.length === 0 ? (
-                                  <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
-                                    No remote shoot
-                                  </div>
-                                ) : (
-                                  remoteShootsAtHour.map((p) => {
-                                    const theme = getShowTheme(p.title, p.type);
-                                    return (
-                                      <div
-                                        key={`single-remote-${p.id}`}
-                                        onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
-                                        style={{
-                                          borderRadius: '6px',
-                                          padding: '5px 8px',
-                                          marginBottom: '4px',
-                                          background: theme.bgDark,
-                                          border: `1px solid ${theme.border}`,
-                                          cursor: 'pointer',
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '3px', background: '#059669', color: '#fff' }}>
-                                            {p.filmingTime || slotHour} (REMOTE)
-                                          </span>
-                                        </div>
-                                        <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, marginTop: '2px' }}>
-                                          {p.title}
-                                        </div>
+                              {(() => {
+                                const cellKey = `day-remote-${dayStr}-${slotHour}`;
+                                const isOver = dragOverKey === cellKey;
+
+                                return (
+                                  <td
+                                    onDragOver={(e) => {
+                                      if (draggedItem?.type === 'FILMING_TASK') {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                        setDragOverKey(cellKey);
+                                      }
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dragOverKey === cellKey) setDragOverKey(null);
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      handleDropOnFilmingSlot(dayStr, slotHour, false);
+                                    }}
+                                    style={{
+                                      padding: '4px 6px',
+                                      borderRight: '2px solid var(--border-color, #334155)',
+                                      verticalAlign: 'top',
+                                      outline: isOver ? '2px dashed #22c55e' : undefined,
+                                      background: isOver ? 'rgba(34, 197, 94, 0.18)' : 'transparent',
+                                      transition: 'background 0.15s ease, outline 0.15s ease',
+                                    }}
+                                  >
+                                    {remoteShootsAtHour.length === 0 ? (
+                                      <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
+                                        {isOver ? 'Drop to schedule remote shoot' : 'No remote shoot'}
                                       </div>
-                                    );
-                                  })
-                                )}
-                              </td>
+                                    ) : (
+                                      remoteShootsAtHour.map((p) => {
+                                        const theme = getShowTheme(p.title, p.type);
+                                        const isDraggingThis = draggedItem?.productionId === p.id;
+
+                                        return (
+                                          <div
+                                            key={`single-remote-${p.id}`}
+                                            draggable={true}
+                                            onDragStart={(e) => handleDragStartFilming(e, p)}
+                                            onDragEnd={() => {
+                                              setDraggedItem(null);
+                                              setDragOverKey(null);
+                                            }}
+                                            onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
+                                            style={{
+                                              borderRadius: '6px',
+                                              padding: '5px 8px',
+                                              marginBottom: '4px',
+                                              background: theme.bgDark,
+                                              border: `1px solid ${theme.border}`,
+                                              cursor: 'grab',
+                                              opacity: isDraggingThis ? 0.4 : 1,
+                                            }}
+                                            title="Drag to reschedule remote filming slot"
+                                          >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <GripVertical size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+                                                <span style={{ fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '3px', background: '#059669', color: '#fff' }}>
+                                                  {p.filmingTime || slotHour} (REMOTE)
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textDark, marginTop: '2px' }}>
+                                              {p.title}
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </td>
+                                );
+                              })()}
                             </>
                           )}
 
@@ -2025,11 +2497,27 @@ export default function ProductionCalendarPage() {
                           {slotIndex === 0 &&
                             activeEditors.map((ed, idx) => {
                               const shiftTasks = getEditorShiftTasks(ed.id, dayStr);
+                              const cellKey = `day-editor-${dayStr}-${ed.id}`;
+                              const isOver = dragOverKey === cellKey && draggedItem?.type === 'EDITING_TASK';
 
                               return (
                                 <td
-                                  key={`single-day-ed-${ed.id}`}
+                                  key={cellKey}
                                   rowSpan={TIME_SLOTS.length}
+                                  onDragOver={(e) => {
+                                    if (draggedItem?.type === 'EDITING_TASK') {
+                                      e.preventDefault();
+                                      e.dataTransfer.dropEffect = 'move';
+                                      setDragOverKey(cellKey);
+                                    }
+                                  }}
+                                  onDragLeave={() => {
+                                    if (dragOverKey === cellKey) setDragOverKey(null);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    handleDropOnEditor(ed.id, dayStr);
+                                  }}
                                   style={{
                                     padding: '8px 6px',
                                     borderRight:
@@ -2037,8 +2525,10 @@ export default function ProductionCalendarPage() {
                                         ? 'none'
                                         : '1px solid var(--border-color, #334155)',
                                     verticalAlign: 'top',
-                                    background: 'rgba(15, 23, 42, 0.25)',
+                                    outline: isOver ? '2px dashed #e879f9' : undefined,
+                                    background: isOver ? 'rgba(192, 38, 211, 0.22)' : 'rgba(15, 23, 42, 0.25)',
                                     width: '230px',
+                                    transition: 'background 0.15s ease, outline 0.15s ease',
                                   }}
                                 >
                                   {/* Shift Queue Header */}
@@ -2081,33 +2571,45 @@ export default function ProductionCalendarPage() {
                                         padding: '24px 8px',
                                         textAlign: 'center',
                                         borderRadius: '6px',
-                                        border: '1px dashed rgba(51, 65, 85, 0.6)',
-                                        color: 'var(--text-secondary)',
+                                        border: isOver ? '1.5px dashed #e879f9' : '1px dashed rgba(51, 65, 85, 0.6)',
+                                        color: isOver ? '#e879f9' : 'var(--text-secondary)',
                                         fontSize: '11px',
-                                        background: 'rgba(15, 23, 42, 0.2)',
+                                        background: isOver ? 'rgba(192, 38, 211, 0.15)' : 'rgba(15, 23, 42, 0.2)',
+                                        transition: 'all 0.15s ease',
                                       }}
                                     >
-                                      No editing tasks on shift for {ed.name}
+                                      {isOver ? 'Drop task to assign here' : `No editing tasks on shift for ${ed.name}`}
                                     </div>
                                   ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                       {shiftTasks.map((p, pIdx) => {
                                         const theme = getShowTheme(p.title, p.type);
+                                        const isDraggingThis = draggedItem?.productionId === p.id;
+
                                         return (
                                           <div
                                             key={`day-task-${p.id}`}
+                                            draggable={true}
+                                            onDragStart={(e) => handleDragStartEditing(e, p, ed.id, dayStr)}
+                                            onDragEnd={() => {
+                                              setDraggedItem(null);
+                                              setDragOverKey(null);
+                                            }}
                                             onClick={() => setSelectedEvent({ type: 'PRODUCTION', data: p })}
                                             style={{
                                               borderRadius: '8px',
                                               padding: '8px 10px',
                                               background: theme.bgDark,
                                               border: `1px solid ${theme.border}`,
-                                              cursor: 'pointer',
+                                              cursor: 'grab',
+                                              opacity: isDraggingThis ? 0.4 : 1,
                                               transition: 'all 0.15s ease',
                                             }}
+                                            title="Drag to reassign editor"
                                           >
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
                                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                <GripVertical size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
                                                 <span
                                                   style={{
                                                     fontSize: '9.5px',

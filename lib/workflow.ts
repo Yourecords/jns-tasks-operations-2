@@ -1508,3 +1508,142 @@ export async function deleteTask(
   };
 }
 
+export async function reassignProductionEditor(
+  productionId: string,
+  editorId: string,
+  editingDate?: string,
+  user?: User
+): Promise<Production> {
+  const db = await getDbAsync();
+  const existing = db.productions.find((p) => p.id === productionId);
+  if (!existing) {
+    throw new Error('Production not found.');
+  }
+
+  const newEditor = db.users.find((u) => u.id === editorId);
+  const newEditorName = newEditor ? newEditor.name : editorId;
+  const oldEditorId = existing.editorId;
+
+  const updatedProd = await updateProductionWithLock(productionId, async (prod) => {
+    prod.editorId = editorId;
+    if (editingDate) {
+      prod.editingDate = editingDate;
+    }
+
+    if (Array.isArray(prod.tasks)) {
+      for (const task of prod.tasks) {
+        const isEditingTask =
+          task.stageName === 'EDITING_FIRST_DRAFT' ||
+          task.stageName === 'REVISIONS' ||
+          task.stageName.includes('EDIT') ||
+          task.stageName.includes('ROUGH') ||
+          task.stageName.includes('DRAFT') ||
+          task.title.toLowerCase().includes('edit') ||
+          task.title.toLowerCase().includes('draft') ||
+          (oldEditorId && task.assignedUserId === oldEditorId);
+
+        if (isEditingTask) {
+          task.assignedUserId = editorId;
+          task.updatedAt = new Date().toISOString();
+          if (editingDate && task.status !== 'COMPLETED') {
+            task.dueDate = editingDate;
+          }
+        }
+      }
+    }
+
+    prod.updatedAt = new Date().toISOString();
+    return prod;
+  });
+
+  const performer: User = user || {
+    id: 'sys_admin',
+    name: 'System',
+    role: 'ADMIN',
+    email: 'admin@system.local',
+    jobFunction: 'OTHER',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+  await logAudit(
+    productionId,
+    performer,
+    'REASSIGN_EDITOR',
+    `${performer.name} reassigned editor of "${updatedProd.title}" to ${newEditorName}${
+      editingDate ? ` for shift on ${editingDate}` : ''
+    }.`
+  );
+
+  return updatedProd;
+}
+
+export async function rescheduleProductionFilming(
+  productionId: string,
+  filmingDate: string,
+  filmingTime: string,
+  user?: User
+): Promise<Production> {
+  const db = await getDbAsync();
+  const existing = db.productions.find((p) => p.id === productionId);
+  if (!existing) {
+    throw new Error('Production not found.');
+  }
+
+  // Check studio conflict if this production occupies the physical studio
+  if (requiresStudio(existing.location)) {
+    const conflict = findStudioConflict(
+      db.productions,
+      filmingDate,
+      filmingTime,
+      existing.location || 'IN_STUDIO',
+      productionId
+    );
+    if (conflict.hasConflict && conflict.conflictingProduction) {
+      throw new Error(
+        `Studio Double-Booking Conflict: "${conflict.conflictingProduction.title}" is already scheduled in the studio at that time (${conflict.conflictingProduction.filmingDate} ${conflict.conflictingProduction.filmingTime}). Physical studio cannot be double-booked.`
+      );
+    }
+  }
+
+  const updatedProd = await updateProductionWithLock(productionId, async (prod) => {
+    prod.filmingDate = filmingDate;
+    prod.filmingTime = filmingTime;
+
+    if (Array.isArray(prod.tasks)) {
+      for (const task of prod.tasks) {
+        if (
+          task.stageName === 'FILMING' ||
+          task.title.toLowerCase().includes('filming') ||
+          task.title.toLowerCase().includes('shoot')
+        ) {
+          task.dueDate = filmingDate;
+          const startHour = filmingTime.split('-')[0].trim();
+          task.dueTime = startHour;
+          task.updatedAt = new Date().toISOString();
+        }
+      }
+    }
+
+    prod.updatedAt = new Date().toISOString();
+    return prod;
+  });
+
+  const performer: User = user || {
+    id: 'sys_admin',
+    name: 'System',
+    role: 'ADMIN',
+    email: 'admin@system.local',
+    jobFunction: 'OTHER',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+  await logAudit(
+    productionId,
+    performer,
+    'RESCHEDULE_FILMING',
+    `${performer.name} rescheduled filming of "${updatedProd.title}" to ${filmingDate} at ${filmingTime}.`
+  );
+
+  return updatedProd;
+}
+

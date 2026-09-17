@@ -20,6 +20,8 @@ import {
   updateTaskStatus,
   deleteProduction,
   deleteTask,
+  reassignProductionEditor,
+  rescheduleProductionFilming,
 } from '../lib/workflow';
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
@@ -29,6 +31,7 @@ import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
 import { POST as postReset } from '../app/api/reset/route';
 import { GET as getTestWorkflow } from '../app/api/test-workflow/route';
 import { GET as getProductions } from '../app/api/productions/route';
+import { PATCH as patchProduction } from '../app/api/productions/[id]/route';
 import { GET as getGear, POST as postGear, DELETE as deleteGear } from '../app/api/gear/route';
 import { GET as getMessages, POST as postMessages, PATCH as patchMessages } from '../app/api/messages/route';
 import { middleware } from '../middleware';
@@ -1098,13 +1101,167 @@ try {
   console.error('✗ Test 22 Failed', err);
 }
 
+// Test 23: Calendar Drag-and-Drop: Reassign Editor, Reschedule Filming & Enforce Studio Conflict Check
+try {
+  const currentDb = getDb();
+  const editors = currentDb.users.filter((u) => u.jobFunction === 'VIDEO_EDITOR');
+  assert(editors.length >= 2, 'Need at least 2 video editors for reassignment test');
+  const editorA = editors[0];
+  const editorB = editors[1];
+
+  // 1. Create a test episode assigned to editorA
+  const testEpisode = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '990',
+      filmingDate: '2026-09-25',
+      filmingTime: '10:00 - 11:30',
+      location: 'IN_STUDIO',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorA.id,
+    },
+    producerUser
+  );
+  assert.strictEqual(testEpisode.editorId, editorA.id);
+
+  // 2. Drag & drop editor reassignment via PATCH /api/productions/[id]
+  const reassignReq = new NextRequest(`http://localhost:3000/api/productions/${testEpisode.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'REASSIGN_EDITOR',
+      editorId: editorB.id,
+      editingDate: '2026-09-26',
+    }),
+  });
+  const reassignRes = await patchProduction(reassignReq, { params: { id: testEpisode.id } });
+  assert.strictEqual(reassignRes.status, 200, 'Reassign editor must return 200');
+  const reassignData = await reassignRes.json();
+  assert.strictEqual(reassignData.production.editorId, editorB.id, 'Editor must be updated to editorB');
+  assert.strictEqual(reassignData.production.editingDate, '2026-09-26', 'Editing shift date must be updated');
+
+  // Verify internal editing tasks were reassigned to editorB
+  const editingTasks = reassignData.production.tasks.filter((t) =>
+    t.stageName === 'EDITING' || t.title.toLowerCase().includes('edit')
+  );
+  for (const t of editingTasks) {
+    assert.strictEqual(t.assignedUserId, editorB.id, 'Editing task assignedUserId must be updated to editorB');
+    assert.strictEqual(t.dueDate, '2026-09-26', 'Editing task dueDate must match target editing date');
+  }
+
+  // 3. Drag & drop filming reschedule via PATCH /api/productions/[id]
+  const rescheduleReq = new NextRequest(`http://localhost:3000/api/productions/${testEpisode.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'RESCHEDULE_FILMING',
+      filmingDate: '2026-10-05',
+      filmingTime: '15:00 - 16:30',
+    }),
+  });
+  const rescheduleRes = await patchProduction(rescheduleReq, { params: { id: testEpisode.id } });
+  const rescheduleData = await rescheduleRes.json();
+  assert.strictEqual(rescheduleRes.status, 200, 'Reschedule filming must return 200');
+  assert.strictEqual(rescheduleData.production.filmingDate, '2026-10-05', 'Filming date must be updated');
+  assert.strictEqual(rescheduleData.production.filmingTime, '15:00 - 16:30', 'Filming time must be updated');
+
+  // Verify filming tasks dueDate was updated
+  const filmingTasks = rescheduleData.production.tasks.filter((t) =>
+    t.stageName === 'FILMING' || t.title.toLowerCase().includes('filming')
+  );
+  for (const t of filmingTasks) {
+    assert.strictEqual(t.dueDate, '2026-10-05', 'Filming task dueDate must match rescheduled filming date');
+  }
+
+  // 4. Physical Studio Double-Booking Prevention
+  // Create a second episode in studio on 2026-09-29
+  const conflictingEpisode = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '991',
+      filmingDate: '2026-09-29',
+      filmingTime: '09:00 - 10:00',
+      location: 'IN_STUDIO',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorA.id,
+    },
+    producerUser
+  );
+
+  // Attempt to drag/reschedule conflictingEpisode to 2026-10-05 15:30 (overlaps with testEpisode)
+  const conflictReq = new NextRequest(`http://localhost:3000/api/productions/${conflictingEpisode.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'RESCHEDULE_FILMING',
+      filmingDate: '2026-10-05',
+      filmingTime: '15:30 - 16:30',
+    }),
+  });
+  const conflictRes = await patchProduction(conflictReq, { params: { id: conflictingEpisode.id } });
+  assert.strictEqual(conflictRes.status, 400, 'Conflicting studio reschedule must be rejected with 400');
+  const conflictData = await conflictRes.json();
+  assert(
+    conflictData.error.includes('Studio Double-Booking Conflict'),
+    `Expected studio conflict error, got: ${conflictData.error}`
+  );
+
+  // 5. Remote Recording Exemption: Remote shoot at the same slot should SUCCEED
+  const remoteEpisode = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '992',
+      filmingDate: '2026-09-29',
+      filmingTime: '09:00 - 10:00',
+      location: 'FULLY_REMOTE',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorA.id,
+    },
+    producerUser
+  );
+
+  const remoteReq = new NextRequest(`http://localhost:3000/api/productions/${remoteEpisode.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'RESCHEDULE_FILMING',
+      filmingDate: '2026-10-05',
+      filmingTime: '15:30 - 16:30',
+    }),
+  });
+  const remoteRes = await patchProduction(remoteReq, { params: { id: remoteEpisode.id } });
+  assert.strictEqual(remoteRes.status, 200, 'Remote shoot reschedule at same time must succeed');
+  const remoteData = await remoteRes.json();
+  assert.strictEqual(remoteData.production.filmingTime, '15:30 - 16:30');
+
+  console.log('✓ Test 23 Passed: Production Calendar drag-and-drop: Editor reassignment, filming reschedule & studio conflict checks');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 23 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 22 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 23 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 22) {
+if (testsPassed !== 23) {
   process.exit(1);
 }
