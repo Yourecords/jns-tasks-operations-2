@@ -2136,9 +2136,6 @@ export default function ProductionCalendarPage() {
                             REMOTE & FIELD RECORDINGS
                           </span>
                         </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                          Zoom, StreamYard & Field Crews (Concurrent shoots permitted)
-                        </div>
                       </th>
 
                       {/* VIDEO EDITORS COLUMNS */}
