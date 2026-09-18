@@ -22,6 +22,22 @@ export function isEligibleEditor(u: User): boolean {
 }
 
 /**
+ * Role permissions check for taxi ordering.
+ * Only Admin, Studio Operator, and Producers can order or manage taxis.
+ */
+export function canManageTaxis(user?: { role?: string; jobFunction?: string; id?: string } | null): boolean {
+  if (!user) return false;
+  return (
+    user.role === 'ADMIN' ||
+    user.role === 'PRODUCER' ||
+    user.jobFunction === 'STUDIO_OPERATOR' ||
+    user.id === 'usr_ahron_studio' ||
+    user.id === 'usr_yuri_admin' ||
+    user.id === 'usr_zach_producer'
+  );
+}
+
+/**
  * Parses a filming time string (e.g. "10:30", "09:00 AM", "14:00 - 16:30 IDT", "2pm")
  * into total minutes from midnight for chronological sorting.
  * Shoots without a specified time return 99999 to be sorted at the end.

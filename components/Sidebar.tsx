@@ -34,8 +34,7 @@ import {
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
-import { isEligibleEditor } from '@/lib/utils';
-import { canManageTaxis } from '@/lib/gett';
+import { isEligibleEditor, canManageTaxis } from '@/lib/utils';
 import UpdateScheduleModal from './UpdateScheduleModal';
 
 interface SidebarProps {

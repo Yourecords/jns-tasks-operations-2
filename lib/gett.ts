@@ -230,21 +230,8 @@ export async function updateGettBusinessConfig(
   return updated;
 }
 
-/**
- * Role permissions check for taxi ordering.
- * Only Admin, Studio Operator, and Producers can order or manage taxis.
- */
-export function canManageTaxis(user?: { role?: string; jobFunction?: string; id?: string } | null): boolean {
-  if (!user) return false;
-  return (
-    user.role === 'ADMIN' ||
-    user.role === 'PRODUCER' ||
-    user.jobFunction === 'STUDIO_OPERATOR' ||
-    user.id === 'usr_ahron_studio' ||
-    user.id === 'usr_yuri_admin' ||
-    user.id === 'usr_zach_producer'
-  );
-}
+import { canManageTaxis } from './utils';
+export { canManageTaxis };
 
 export interface CreateTaxiOrderParams {
   productionId?: string;

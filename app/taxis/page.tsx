@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { TaxiRide, TaxiStatus, TaxiVehicleType, TaxiDirection, TaxiPassengerRole } from '@/lib/types';
 import { useUser } from '@/components/UserContext';
-import { canManageTaxis } from '@/lib/gett';
+import { canManageTaxis } from '@/lib/utils';
 
 const PRESET_ADDRESSES = [
   { name: 'JNS Jerusalem Studio', address: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem' },
