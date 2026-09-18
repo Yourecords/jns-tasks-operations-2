@@ -25,6 +25,8 @@ import {
   Sparkles,
   Film,
   Building,
+  Settings,
+  Check,
 } from 'lucide-react';
 import { TaxiRide, TaxiStatus, TaxiVehicleType, TaxiDirection, TaxiPassengerRole } from '@/lib/types';
 import { useUser } from '@/components/UserContext';
@@ -55,6 +57,24 @@ export default function TaxisPage() {
 
   // Productions for auto-fill
   const [productions, setProductions] = useState<any[]>([]);
+
+  // Gett Business Connection State
+  const [gettConfig, setGettConfig] = useState<any>(null);
+  const [canManageGett, setCanManageGett] = useState(false);
+  const [connectionModalOpen, setConnectionModalOpen] = useState(false);
+  const [connLoading, setConnLoading] = useState(false);
+  const [testResult, setTestResult] = useState<{ success?: boolean; message?: string; details?: any } | null>(null);
+
+  // Form State for Connect Gett Modal
+  const [connAccountId, setConnAccountId] = useState('');
+  const [connCompanyName, setConnCompanyName] = useState('Jewish News Syndicate (JNS)');
+  const [connClientId, setConnClientId] = useState('');
+  const [connClientSecret, setConnClientSecret] = useState('');
+  const [connEnvironment, setConnEnvironment] = useState<'production' | 'sandbox'>('production');
+  const [connCostCenter, setConnCostCenter] = useState('JNS Video Operations - Jerusalem Studio');
+  const [connBillingEmail, setConnBillingEmail] = useState('production@jns.org');
+  const [connAutoDispatch, setConnAutoDispatch] = useState(false);
+  const [showAdvancedApi, setShowAdvancedApi] = useState(false);
 
   // Dispatch Form State
   const [selectedProductionId, setSelectedProductionId] = useState('');
@@ -109,9 +129,116 @@ export default function TaxisPage() {
     }
   };
 
+  const fetchGettConnection = async () => {
+    try {
+      const res = await fetch('/api/taxis/connection');
+      if (res.ok) {
+        const data = await res.json();
+        setGettConfig(data.config);
+        setCanManageGett(data.canManage);
+        if (data.config) {
+          setConnAccountId(data.config.accountId || '');
+          setConnCompanyName(data.config.companyName || 'Jewish News Syndicate (JNS)');
+          setConnEnvironment(data.config.environment || 'production');
+          setConnCostCenter(data.config.defaultCostCenter || 'JNS Video Operations - Jerusalem Studio');
+          setConnBillingEmail(data.config.billingEmail || 'production@jns.org');
+          setConnAutoDispatch(Boolean(data.config.autoDispatchLive));
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching Gett connection status', err);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setConnLoading(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/taxis/connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TEST',
+          accountId: connAccountId,
+          companyName: connCompanyName,
+          clientId: connClientId,
+          clientSecret: connClientSecret,
+          environment: connEnvironment,
+        }),
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || 'Connection test failed.' });
+    } finally {
+      setConnLoading(false);
+    }
+  };
+
+  const handleSaveConnection = async (connectNow = true) => {
+    if (connectNow && !connAccountId.trim() && !connClientId.trim()) {
+      showToast('Please enter your Gett Corporate Account ID or API Client ID.', 'error');
+      return;
+    }
+    setConnLoading(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/taxis/connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SAVE',
+          connected: connectNow,
+          accountId: connAccountId,
+          companyName: connCompanyName,
+          clientId: connClientId,
+          clientSecret: connClientSecret,
+          environment: connEnvironment,
+          defaultCostCenter: connCostCenter,
+          billingEmail: connBillingEmail,
+          autoDispatchLive: connAutoDispatch,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save connection');
+      showToast(data.message || 'Gett Business IL connected successfully!', 'success');
+      setGettConfig(data.config);
+      setConnectionModalOpen(false);
+      fetchTaxis();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+      setTestResult({ success: false, message: err.message });
+    } finally {
+      setConnLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm('Disconnect JNS account from Gett Business Israel? Bookings will revert to local simulation.')) return;
+    setConnLoading(true);
+    try {
+      const res = await fetch('/api/taxis/connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'DISCONNECT' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to disconnect');
+      showToast('Gett Business Israel disconnected.', 'success');
+      setGettConfig(data.config);
+      setConnectionModalOpen(false);
+      fetchTaxis();
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setConnLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchTaxis();
     fetchProductions();
+    fetchGettConnection();
     const interval = setInterval(fetchTaxis, 8000);
     return () => clearInterval(interval);
   }, []);
@@ -435,7 +562,96 @@ export default function TaxisPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Gett Business Connection Status Badge */}
+          {gettConfig?.connected ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                color: '#34d399',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }}></span>
+              <span>Gett Business IL: Connected</span>
+              {gettConfig.accountId && (
+                <span style={{ fontSize: '11px', color: '#94a3b8', backgroundColor: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '4px' }}>
+                  #{gettConfig.accountId}
+                </span>
+              )}
+              {canManageGett && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTestResult(null);
+                    setConnectionModalOpen(true);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#60a5fa',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 4px',
+                    textDecoration: 'underline',
+                  }}
+                  title="Configure account credentials and cost centers"
+                >
+                  Settings
+                </button>
+              )}
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                color: '#fbbf24',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }}></span>
+              <span>Gett Business IL: Not Connected</span>
+              {canManageGett && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTestResult(null);
+                    setConnectionModalOpen(true);
+                  }}
+                  style={{
+                    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    color: '#fef08a',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '5px',
+                    marginLeft: '4px',
+                  }}
+                  title="Connect JNS Gett Business corporate account"
+                >
+                  Connect Account
+                </button>
+              )}
+            </div>
+          )}
+
           <button
             onClick={fetchTaxis}
             style={{
@@ -798,6 +1014,24 @@ export default function TaxisPage() {
                     <div style={{ fontSize: '10px', color: '#64748b', marginTop: '3px' }}>
                       {ride.gettOrderId}
                     </div>
+                    {ride.isCorporateRide && (
+                      <div style={{ marginTop: '4px' }}>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                            color: '#38bdf8',
+                            border: '1px solid rgba(56, 189, 248, 0.25)',
+                            display: 'inline-block',
+                          }}
+                        >
+                          🏢 Gett Business
+                        </span>
+                      </div>
+                    )}
                   </td>
 
                   <td style={{ padding: '14px 16px' }}>
@@ -1364,6 +1598,325 @@ export default function TaxisPage() {
               >
                 {actionLoading ? 'Cancelling...' : 'Yes, Cancel Taxi'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONNECT GETT BUSINESS ISRAEL MODAL */}
+      {connectionModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9500,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={() => setConnectionModalOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '560px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              backgroundColor: '#1e293b',
+              borderRadius: '16px',
+              border: '1px solid #334155',
+              padding: '28px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Building size={22} color="#60a5fa" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#f8fafc' }}>
+                    Connect Gett Business Israel (גט לעסקים)
+                  </h3>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                    Directly link your JNS Corporate account for seamless taxi dispatch and billing.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setConnectionModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '20px', cursor: 'pointer', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Test Result Message */}
+            {testResult && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  marginBottom: '16px',
+                  fontSize: '13px',
+                  backgroundColor: testResult.success ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  border: `1px solid ${testResult.success ? '#10b981' : '#ef4444'}`,
+                  color: testResult.success ? '#34d399' : '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                {testResult.success ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                <span>{testResult.message}</span>
+              </div>
+            )}
+
+            {/* Connection Status Overview */}
+            <div
+              style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid #334155',
+                marginBottom: '20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Current Status
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: gettConfig?.connected ? '#34d399' : '#f59e0b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: gettConfig?.connected ? '#10b981' : '#f59e0b', display: 'inline-block' }}></span>
+                  <span>{gettConfig?.connected ? 'Connected to JNS Account' : 'Disconnected (Internal Simulator)'}</span>
+                </div>
+              </div>
+              <a
+                href="https://business.gett.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(51, 65, 85, 0.6)',
+                  border: '1px solid #475569',
+                  color: '#93c5fd',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                }}
+              >
+                <span>Gett Business Portal</span>
+                <ExternalLink size={11} />
+              </a>
+            </div>
+
+            {/* Form Fields */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                  Company Name
+                </label>
+                <input
+                  type="text"
+                  value={connCompanyName}
+                  onChange={(e) => setConnCompanyName(e.target.value)}
+                  placeholder="Jewish News Syndicate (JNS)"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#f8fafc', fontSize: '13px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                  Gett Business Corporate Account ID (מזהה לקוח עסקי)
+                </label>
+                <input
+                  type="text"
+                  value={connAccountId}
+                  onChange={(e) => setConnAccountId(e.target.value)}
+                  placeholder="e.g. JNS-CORP-IL or your 6-digit customer number"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#f8fafc', fontSize: '13px' }}
+                />
+                <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Found on your monthly Gett corporate billing invoice or Gett Business contract.
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                    Environment
+                  </label>
+                  <select
+                    value={connEnvironment}
+                    onChange={(e) => setConnEnvironment(e.target.value as any)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#f8fafc', fontSize: '13px' }}
+                  >
+                    <option value="production">Production Israel (api.gett.com)</option>
+                    <option value="sandbox">Sandbox Testing (api-sandbox.gett.com)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                    Billing Notification Email
+                  </label>
+                  <input
+                    type="email"
+                    value={connBillingEmail}
+                    onChange={(e) => setConnBillingEmail(e.target.value)}
+                    placeholder="production@jns.org"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#f8fafc', fontSize: '13px' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#cbd5e1', marginBottom: '6px' }}>
+                  Default Cost Center (מרכז עלות)
+                </label>
+                <input
+                  type="text"
+                  value={connCostCenter}
+                  onChange={(e) => setConnCostCenter(e.target.value)}
+                  placeholder="JNS Video Operations - Jerusalem Studio"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#f8fafc', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Collapsible Direct API Credentials */}
+              <div style={{ borderTop: '1px solid #334155', paddingTop: '12px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedApi(!showAdvancedApi)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#93c5fd',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span>{showAdvancedApi ? '▼' : '►'} Advanced: Gett Business Direct API Credentials (OAuth2)</span>
+                </button>
+
+                {showAdvancedApi && (
+                  <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid #334155' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                        API Client ID
+                      </label>
+                      <input
+                        type="text"
+                        value={connClientId}
+                        onChange={(e) => setConnClientId(e.target.value)}
+                        placeholder="e.g. gett_client_..."
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', backgroundColor: '#1e293b', border: '1px solid #475569', color: '#f8fafc', fontSize: '12px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                        API Client Secret
+                      </label>
+                      <input
+                        type="password"
+                        value={connClientSecret}
+                        onChange={(e) => setConnClientSecret(e.target.value)}
+                        placeholder="Leave blank to keep existing or enter new secret"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', backgroundColor: '#1e293b', border: '1px solid #475569', color: '#f8fafc', fontSize: '12px' }}
+                      />
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#cbd5e1', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={connAutoDispatch}
+                        onChange={(e) => setConnAutoDispatch(e.target.checked)}
+                      />
+                      <span>Automatically dispatch live rides directly through Gett Business API</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #334155' }}>
+              <div>
+                {gettConfig?.connected && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    disabled={connLoading}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      color: '#f87171',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={connLoading}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #475569',
+                    backgroundColor: 'rgba(51, 65, 85, 0.6)',
+                    color: '#e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: connLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {connLoading ? 'Testing...' : 'Test Connection'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveConnection(true)}
+                  disabled={connLoading}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#2563eb',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: connLoading ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.35)',
+                  }}
+                >
+                  {connLoading ? 'Saving...' : 'Save & Connect'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

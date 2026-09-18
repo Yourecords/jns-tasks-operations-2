@@ -23,6 +23,9 @@ import {
   Pencil,
   Sliders,
   Eye,
+  Car,
+  ExternalLink,
+  Building,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { User, Show, UserRole, JobFunction, ShowStatus, MemberType, AutomatedEmailAlertSettings } from '@/lib/types';
@@ -88,6 +91,79 @@ export default function AdminSettingsPage() {
   const [scheduleUrl, setScheduleUrl] = useState('');
   const [emailUrl, setEmailUrl] = useState('');
   const [linkSaved, setLinkSaved] = useState(false);
+
+  // Gett Business Integration State
+  const [adminGettConfig, setAdminGettConfig] = useState<any>(null);
+  const [adminGettAccountId, setAdminGettAccountId] = useState('');
+  const [adminGettCostCenter, setAdminGettCostCenter] = useState('JNS Video Operations - Jerusalem Studio');
+  const [adminGettEnv, setAdminGettEnv] = useState<'production' | 'sandbox'>('production');
+  const [adminGettLoading, setAdminGettLoading] = useState(false);
+  const [adminGettSaved, setAdminGettSaved] = useState(false);
+  const [adminGettTestResult, setAdminGettTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+
+  const fetchAdminGettConfig = async () => {
+    try {
+      const res = await fetch('/api/taxis/connection');
+      if (res.ok) {
+        const data = await res.json();
+        setAdminGettConfig(data.config);
+        if (data.config) {
+          setAdminGettAccountId(data.config.accountId || '');
+          setAdminGettCostCenter(data.config.defaultCostCenter || 'JNS Video Operations - Jerusalem Studio');
+          setAdminGettEnv(data.config.environment || 'production');
+        }
+      }
+    } catch (e) {}
+  };
+
+  const handleSaveAdminGett = async (connect = true) => {
+    setAdminGettLoading(true);
+    setAdminGettTestResult(null);
+    try {
+      const res = await fetch('/api/taxis/connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SAVE',
+          connected: connect,
+          accountId: adminGettAccountId,
+          defaultCostCenter: adminGettCostCenter,
+          environment: adminGettEnv,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update');
+      setAdminGettConfig(data.config);
+      setAdminGettSaved(true);
+      setTimeout(() => setAdminGettSaved(false), 3000);
+    } catch (err: any) {
+      setAdminGettTestResult({ success: false, message: err.message });
+    } finally {
+      setAdminGettLoading(false);
+    }
+  };
+
+  const handleTestAdminGett = async () => {
+    setAdminGettLoading(true);
+    setAdminGettTestResult(null);
+    try {
+      const res = await fetch('/api/taxis/connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TEST',
+          accountId: adminGettAccountId,
+          environment: adminGettEnv,
+        }),
+      });
+      const data = await res.json();
+      setAdminGettTestResult(data);
+    } catch (err: any) {
+      setAdminGettTestResult({ success: false, message: err.message });
+    } finally {
+      setAdminGettLoading(false);
+    }
+  };
 
   // Email Dispatcher State
   const [testEmailTarget, setTestEmailTarget] = useState(currentUser?.email || 'yskvirski@jns.org');
@@ -168,6 +244,7 @@ export default function AdminSettingsPage() {
         }
       }
     });
+    fetchAdminGettConfig();
   }, []);
 
   useEffect(() => {
@@ -853,56 +930,196 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* TAB 3: SYSTEM LINKS (Items 24 & 25) */}
+      {/* TAB 3: SYSTEM LINKS & INTEGRATIONS */}
       {activeTab === 'LINKS' && (
-        <div className="section-panel" style={{ maxWidth: '640px' }}>
-          <div className="section-panel-header">
-            <div className="section-panel-title">
-              <Link2 size={16} color="var(--jns-gold)" />
-              <span>Configure External Production Tool URLs</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+          <div className="section-panel">
+            <div className="section-panel-header">
+              <div className="section-panel-title">
+                <Link2 size={16} color="var(--jns-gold)" />
+                <span>Configure External Production Tool URLs</span>
+              </div>
+            </div>
+            <div className="section-panel-body">
+              <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">
+                    JNS Video Production Schedule URL (Google Sheet, Google Calendar, Notion, or Airtable)
+                  </label>
+                  <input
+                    type="url"
+                    className="form-input"
+                    value={scheduleUrl}
+                    onChange={(e) => setScheduleUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/... or https://calendar.google.com/..."
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Production Mailbox Shortcut URL (Visible only to Producers & Admin)
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={emailUrl}
+                    onChange={(e) => setEmailUrl(e.target.value)}
+                    placeholder="https://mail.google.com/mail/?view=cm&fs=1&to=production@jns.org"
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <button type="submit" className="btn btn-primary">
+                    Save System Links
+                  </button>
+                  {linkSaved && (
+                    <span style={{ color: '#86efac', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Check size={14} /> Saved!
+                    </span>
+                  )}
+                </div>
+              </form>
             </div>
           </div>
-          <div className="section-panel-body">
-            <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label">
-                  JNS Video Production Schedule URL (Google Sheet, Google Calendar, Notion, or Airtable)
-                </label>
-                <input
-                  type="url"
-                  className="form-input"
-                  value={scheduleUrl}
-                  onChange={(e) => setScheduleUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/... or https://calendar.google.com/..."
-                  required
-                />
-              </div>
 
-              <div className="form-group">
-                <label className="form-label">
-                  Production Mailbox Shortcut URL (Visible only to Producers & Admin)
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={emailUrl}
-                  onChange={(e) => setEmailUrl(e.target.value)}
-                  placeholder="https://mail.google.com/mail/?view=cm&fs=1&to=production@jns.org"
-                  required
-                />
+          {/* Gett Business IL Integration Panel */}
+          <div className="section-panel">
+            <div className="section-panel-header">
+              <div className="section-panel-title">
+                <Car size={16} color="var(--jns-gold)" />
+                <span>Gett Business Israel (גט לעסקים) Corporate Account</span>
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
-                <button type="submit" className="btn btn-primary">
-                  Save System Links
-                </button>
-                {linkSaved && (
-                  <span style={{ color: '#86efac', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Check size={14} /> Saved!
+              <a
+                href="https://business.gett.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  color: '#93c5fd',
+                  textDecoration: 'none',
+                }}
+              >
+                <span>Gett Portal</span>
+                <ExternalLink size={11} />
+              </a>
+            </div>
+            <div className="section-panel-body">
+              {/* Status banner */}
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: adminGettConfig?.connected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                  border: `1px solid ${adminGettConfig?.connected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: adminGettConfig?.connected ? '#10b981' : '#f59e0b',
+                      display: 'inline-block',
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: adminGettConfig?.connected ? '#34d399' : '#fbbf24' }}>
+                    {adminGettConfig?.connected ? 'Corporate Account Connected' : 'Not Connected (Simulation Mode)'}
                   </span>
-                )}
+                </div>
+                <a href="/taxis" style={{ fontSize: '11px', color: '#60a5fa', textDecoration: 'underline' }}>
+                  Open Taxis Hub →
+                </a>
               </div>
-            </form>
+
+              {adminGettTestResult && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    marginBottom: '1rem',
+                    fontSize: '12px',
+                    backgroundColor: adminGettTestResult.success ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    border: `1px solid ${adminGettTestResult.success ? '#10b981' : '#ef4444'}`,
+                    color: adminGettTestResult.success ? '#34d399' : '#f87171',
+                  }}
+                >
+                  {adminGettTestResult.message}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Gett Business Corporate Account ID (מזהה לקוח עסקי)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={adminGettAccountId}
+                    onChange={(e) => setAdminGettAccountId(e.target.value)}
+                    placeholder="e.g. JNS-CORP-IL or your 6-digit customer number"
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Used to bill guest rides to the JNS Israel corporate credit agreement and invoices.
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Default Cost Center (מרכז עלות)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={adminGettCostCenter}
+                    onChange={(e) => setAdminGettCostCenter(e.target.value)}
+                    placeholder="JNS Video Operations - Jerusalem Studio"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Environment</label>
+                  <select
+                    className="form-input"
+                    value={adminGettEnv}
+                    onChange={(e) => setAdminGettEnv(e.target.value as any)}
+                  >
+                    <option value="production">Production Israel (api.gett.com)</option>
+                    <option value="sandbox">Sandbox Testing (api-sandbox.gett.com)</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => handleSaveAdminGett(true)}
+                    disabled={adminGettLoading}
+                  >
+                    {adminGettLoading ? 'Saving...' : 'Connect & Save Account'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleTestAdminGett}
+                    disabled={adminGettLoading}
+                  >
+                    Test
+                  </button>
+                  {adminGettSaved && (
+                    <span style={{ color: '#86efac', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Check size={14} /> Saved!
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

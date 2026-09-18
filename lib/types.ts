@@ -402,6 +402,21 @@ export interface AutomatedEmailAlertSettings {
   targetRoles: ('PRODUCER' | 'ADMIN' | 'TEAM_MEMBER')[];
 }
 
+export interface GettBusinessConfig {
+  connected: boolean;
+  accountId?: string; // JNS Corporate Account ID (e.g. JNS-IL-98124)
+  companyName?: string; // e.g. Jewish News Syndicate (JNS)
+  clientId?: string;
+  clientSecret?: string;
+  environment?: 'production' | 'sandbox';
+  defaultCostCenter?: string; // e.g. JNS Video Operations - Jerusalem Studio
+  billingEmail?: string;
+  autoDispatchLive?: boolean;
+  lastTestedAt?: string;
+  connectionStatus?: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  statusMessage?: string;
+}
+
 export interface SystemSettings {
   scheduleUrl: string;
   productionEmailUrl: string;
@@ -409,6 +424,7 @@ export interface SystemSettings {
   emailNotificationsEnabled?: boolean;
   smtpSenderEmail?: string;
   emailAlertConfig?: AutomatedEmailAlertSettings;
+  gettBusinessConfig?: GettBusinessConfig;
   lastUpdated: string;
 }
 
@@ -564,6 +580,8 @@ export interface TaxiRide {
     currentEtaMinutes?: number;
   };
   gettOrderId?: string;
+  gettBusinessAccountId?: string;
+  isCorporateRide?: boolean;
   trackingUrl?: string;
   costCenter?: string;
   notes?: string;

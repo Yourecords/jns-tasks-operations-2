@@ -163,6 +163,19 @@ export const INITIAL_SETTINGS: SystemSettings = {
   productionEmailUrl: 'https://mail.google.com/mail/?view=cm&fs=1&to=production@jns.org',
   emailNotificationsEnabled: true,
   smtpSenderEmail: 'production@jns.org',
+  gettBusinessConfig: {
+    connected: false,
+    accountId: '',
+    companyName: 'Jewish News Syndicate (JNS)',
+    clientId: '',
+    clientSecret: '',
+    environment: 'production',
+    defaultCostCenter: 'JNS Video Operations - Jerusalem Studio',
+    billingEmail: 'production@jns.org',
+    autoDispatchLive: false,
+    connectionStatus: 'DISCONNECTED',
+    statusMessage: 'Not connected to Gett Business Israel account.',
+  },
   lastUpdated: new Date().toISOString(),
 };
 

@@ -36,6 +36,7 @@ import { GET as getGear, POST as postGear, DELETE as deleteGear } from '../app/a
 import { GET as getMessages, POST as postMessages, PATCH as patchMessages } from '../app/api/messages/route';
 import { GET as getTaxis, POST as postTaxis } from '../app/api/taxis/route';
 import { PATCH as patchTaxi } from '../app/api/taxis/[id]/route';
+import { GET as getTaxiConnection, POST as postTaxiConnection } from '../app/api/taxis/connection/route';
 import { middleware } from '../middleware';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
@@ -1454,13 +1455,135 @@ try {
   console.error('✗ Test 24 Failed', err);
 }
 
+// Test 25: Gett Business Israel (Gett Business IL) Corporate Account Connection & Attribution
+try {
+  // 1. Role Guard: Editor cannot configure Gett Business connection (403 Forbidden)
+  const editorConnReq = new NextRequest('http://localhost:3000/api/taxis/connection', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'SAVE',
+      accountId: 'MALICIOUS_ATTEMPT',
+    }),
+  });
+  const editorConnRes = await postTaxiConnection(editorConnReq);
+  assert.strictEqual(editorConnRes.status, 403, 'Editor must receive 403 when configuring Gett Business');
+
+  // 2. Connection Testing: Producer tests connection with corporate ID
+  const testConnReq = new NextRequest('http://localhost:3000/api/taxis/connection', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'TEST',
+      accountId: 'JNS-IL-98124',
+      companyName: 'Jewish News Syndicate (JNS)',
+    }),
+  });
+  const testConnRes = await postTaxiConnection(testConnReq);
+  assert.strictEqual(testConnRes.status, 200, 'Test connection endpoint must return 200');
+  const testConnData = await testConnRes.json();
+  assert.strictEqual(testConnData.success, true, 'Valid Account ID must pass connection test');
+
+  // 3. Account Connection: Producer connects JNS Gett Business corporate account
+  const saveConnReq = new NextRequest('http://localhost:3000/api/taxis/connection', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'SAVE',
+      connected: true,
+      accountId: 'JNS-IL-98124',
+      companyName: 'Jewish News Syndicate (JNS)',
+      defaultCostCenter: 'JNS Video Operations - Jerusalem Studio',
+      billingEmail: 'production@jns.org',
+    }),
+  });
+  const saveConnRes = await postTaxiConnection(saveConnReq);
+  assert.strictEqual(saveConnRes.status, 200, 'Saving Gett Business connection must return 200');
+  const saveConnData = await saveConnRes.json();
+  assert.strictEqual(saveConnData.config.connected, true);
+  assert.strictEqual(saveConnData.config.accountId, 'JNS-IL-98124');
+
+  // 4. GET endpoint verification: Returns active connection status
+  const getConnReq = new NextRequest('http://localhost:3000/api/taxis/connection', {
+    method: 'GET',
+    headers: {
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+  });
+  const getConnRes = await getTaxiConnection(getConnReq);
+  assert.strictEqual(getConnRes.status, 200);
+  const getConnData = await getConnRes.json();
+  assert.strictEqual(getConnData.config.connected, true);
+  assert.strictEqual(getConnData.config.accountId, 'JNS-IL-98124');
+  assert.strictEqual(getConnData.canManage, true);
+
+  // 5. Corporate Dispatch Attribution: Ride ordered while connected is tagged as corporate
+  const corpOrderReq = new NextRequest('http://localhost:3000/api/taxis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      passengerName: 'General Yaakov Amidror',
+      passengerPhone: '+972-52-1112233',
+      passengerRole: 'GUEST',
+      pickupAddress: 'Inbal Hotel, Liberty Bell Park, Jerusalem',
+      dropoffAddress: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem',
+      direction: 'TO_STUDIO',
+      isImmediate: true,
+    }),
+  });
+  const corpOrderRes = await postTaxis(corpOrderReq);
+  assert.strictEqual(corpOrderRes.status, 201);
+  const corpOrderData = await corpOrderRes.json();
+  assert.strictEqual(corpOrderData.ride.isCorporateRide, true, 'Ride must be attributed as corporate ride');
+  assert.strictEqual(corpOrderData.ride.gettBusinessAccountId, 'JNS-IL-98124', 'Ride must link to JNS Gett Business account ID');
+  assert(corpOrderData.ride.trackingUrl.includes('business.gett.com/rides'), 'Tracking URL must link to Gett Business portal');
+
+  // 6. Audit log check
+  const dbAfter = getDb();
+  const corpAudit = dbAfter.auditLogs.find(
+    (l) => l.action === 'ORDER_TAXI' && l.details.includes('JNS-IL-98124')
+  );
+  assert(corpAudit, 'Audit log must record Gett Business corporate account attribution');
+
+  // 7. Disconnect Gett Business account
+  const discReq = new NextRequest('http://localhost:3000/api/taxis/connection', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${adminUser.id}`,
+    },
+    body: JSON.stringify({ action: 'DISCONNECT' }),
+  });
+  const discRes = await postTaxiConnection(discReq);
+  assert.strictEqual(discRes.status, 200);
+  const discData = await discRes.json();
+  assert.strictEqual(discData.config.connected, false, 'Disconnect action must mark connection false');
+
+  console.log('✓ Test 25 Passed: Gett Business Israel (Gett Business IL) Corporate Account Connection, Masked Auth & Corporate Attribution');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 25 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 24 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 25 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 24) {
+if (testsPassed !== 25) {
   process.exit(1);
 }
