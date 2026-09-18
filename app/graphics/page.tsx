@@ -264,7 +264,7 @@ export default function GraphicsHubPage() {
           }}
         >
           <Plus size={16} />
-          <span>Create New Graphics</span>
+          <span>New Graphics Request</span>
         </button>
       </div>
 
@@ -434,7 +434,7 @@ export default function GraphicsHubPage() {
           </p>
           <button className="btn btn-primary btn-sm" onClick={() => setQuickActionOpen(true)}>
             <Plus size={14} />
-            <span>Create New Graphics</span>
+            <span>New Graphics Request</span>
           </button>
         </div>
       ) : (

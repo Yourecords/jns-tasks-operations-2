@@ -606,7 +606,7 @@ export default function QuickActionModal({
             }}
           >
             <Palette size={13} style={{ display: 'inline', marginRight: '4px' }} />
-            New Graphics
+            New Graphics Request
           </button>
           <button
             className={`filter-tab ${activeTab === 'EQUIPMENT' ? 'active' : ''}`}
@@ -1675,7 +1675,7 @@ export default function QuickActionModal({
             </form>
           )}
 
-          {/* TAB: CREATE NEW GRAPHICS (Item: Immediate Request vs Long-Term Project) */}
+          {/* TAB: NEW GRAPHICS REQUEST (Item: Immediate Request vs Long-Term Project) */}
           {activeTab === 'GRAPHICS' && (
             <form onSubmit={handleCreateGraphics} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {/* Type Toggle: Immediate Show Request vs Long-Term Project */}
