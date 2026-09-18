@@ -28,6 +28,7 @@ import {
   X,
   Lock,
   Car,
+  Play,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, ProductionTask, Comment, AuditLog, RevisionCycle } from '@/lib/types';
@@ -35,6 +36,7 @@ import { isEligibleEditor, canManageTaxis } from '@/lib/utils';
 import WorkflowBreadcrumb from '@/components/WorkflowBreadcrumb';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
+import VideoPreviewModal from '@/components/VideoPreviewModal';
 
 export default function ProductionDetailPage() {
   const params = useParams();
@@ -108,6 +110,20 @@ export default function ProductionDetailPage() {
   const [deleteSubtaskTarget, setDeleteSubtaskTarget] = useState<any | null>(null);
   const [deleteSubtaskLoading, setDeleteSubtaskLoading] = useState(false);
   const [deleteSubtaskError, setDeleteSubtaskError] = useState('');
+
+  // Video Preview Modal State
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState('');
+  const [previewVideoTitle, setPreviewVideoTitle] = useState('');
+  const [previewVideoSubtitle, setPreviewVideoSubtitle] = useState('');
+
+  const handleOpenVideoPreview = (url?: string | null, title?: string, subtitle?: string) => {
+    if (!url) return;
+    setPreviewVideoUrl(url);
+    setPreviewVideoTitle(title || production?.title || 'Video Preview');
+    setPreviewVideoSubtitle(subtitle || '');
+    setPreviewModalOpen(true);
+  };
 
   const fetchDetails = async () => {
     try {
@@ -328,17 +344,47 @@ export default function ProductionDetailPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {production.youtubeUrl && (
-              <a
-                href={production.youtubeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-secondary btn-sm"
+            {production.dropboxUrl && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleOpenVideoPreview(
+                    production.dropboxUrl!,
+                    production.title,
+                    'Dropbox Master Video'
+                  )
+                }
+                className="btn btn-primary btn-sm"
+                title="Preview / stream Dropbox video in-app"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)',
+                }}
               >
-                <Video size={14} color="#ef4444" />
-                <span>YouTube</span>
-                <ExternalLink size={11} />
-              </a>
+                <Play size={12} fill="currentColor" />
+                <span>Preview Dropbox</span>
+              </button>
+            )}
+            {production.youtubeUrl && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleOpenVideoPreview(
+                    production.youtubeUrl!,
+                    production.title,
+                    'YouTube Video'
+                  )
+                }
+                className="btn btn-secondary btn-sm"
+                title="Watch YouTube video in-app"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Play size={12} fill="#ef4444" color="#ef4444" />
+                <span>Watch YouTube</span>
+              </button>
             )}
             {production.dropboxUrl && (
               <a
@@ -346,9 +392,23 @@ export default function ProductionDetailPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-secondary btn-sm"
+                title="Open directly in Dropbox"
               >
                 <Upload size={14} color="var(--jns-blue)" />
                 <span>Dropbox</span>
+                <ExternalLink size={11} />
+              </a>
+            )}
+            {production.youtubeUrl && (
+              <a
+                href={production.youtubeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-sm"
+                title="Open directly on YouTube"
+              >
+                <Video size={14} color="#ef4444" />
+                <span>YouTube</span>
                 <ExternalLink size={11} />
               </a>
             )}
@@ -866,14 +926,36 @@ export default function ProductionDetailPage() {
                         </div>
                       )}
                     </div>
-                    <a
-                      href={activeCycle.reviewLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-secondary btn-sm"
-                    >
-                      Open Video Player <ExternalLink size={12} />
-                    </a>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleOpenVideoPreview(
+                            activeCycle.reviewLink,
+                            `${production.title} - Draft ${activeCycle.draftNumber}`,
+                            'Stage 4 Review Draft'
+                          )
+                        }
+                        className="btn btn-primary btn-sm"
+                        style={{
+                          background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Play size={12} fill="currentColor" />
+                        <span>Preview Draft</span>
+                      </button>
+                      <a
+                        href={activeCycle.reviewLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary btn-sm"
+                      >
+                        External Link <ExternalLink size={12} />
+                      </a>
+                    </div>
                   </div>
                 )}
 
@@ -1488,14 +1570,39 @@ export default function ProductionDetailPage() {
 
                     {rev.reviewLink && (
                       <div style={{ fontSize: '12px', margin: '4px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                        <a
-                          href={rev.reviewLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'var(--jns-gold)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                        >
-                          Review Link <ExternalLink size={11} />
-                        </a>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenVideoPreview(
+                                rev.reviewLink,
+                                `${production.title} - Draft ${rev.draftNumber}`,
+                                `Draft ${rev.draftNumber} • ${rev.status.replace(/_/g, ' ')}`
+                              )
+                            }
+                            className="btn btn-primary btn-xs"
+                            title="Preview video cut in-app"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                            }}
+                          >
+                            <Play size={10} fill="currentColor" />
+                            <span>Preview</span>
+                          </button>
+                          <a
+                            href={rev.reviewLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'var(--jns-gold)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
+                          >
+                            External <ExternalLink size={11} />
+                          </a>
+                        </div>
                         <WhatsAppShareButton
                           itemTitle={`${production.title} (Draft ${rev.draftNumber})`}
                           stageOrAction="is ready for review"
@@ -2039,6 +2146,15 @@ export default function ProductionDetailPage() {
           </div>
         </div>
       )}
+
+      {/* IN-APP VIDEO PREVIEW MODAL */}
+      <VideoPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        videoUrl={previewVideoUrl}
+        title={previewVideoTitle}
+        subtitle={previewVideoSubtitle}
+      />
     </div>
   );
 }
