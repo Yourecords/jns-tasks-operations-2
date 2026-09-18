@@ -22,6 +22,9 @@ import {
   FileText,
   Calendar,
   User,
+  Pencil,
+  X,
+  Save,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import {
@@ -29,6 +32,7 @@ import {
   GraphicSubtask,
   GraphicSubtaskStatus,
   GraphicTaskStatus,
+  Priority,
 } from '@/lib/types';
 import QuickActionModal from '@/components/QuickActionModal';
 
@@ -46,14 +50,37 @@ const SUBTASK_STAGES: { key: GraphicSubtaskStatus; label: string; color: string 
 export default function GraphicsHubPage() {
   const { currentUser, allUsers } = useUser();
   const [tasks, setTasks] = useState<GraphicDesignTask[]>([]);
+  const [shows, setShows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<'ALL' | 'IMMEDIATE' | 'LONG_TERM'>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+
+  // Inline subtask addition per task
   const [addingSubtaskTaskId, setAddingSubtaskTaskId] = useState<string | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newSubtaskStatus, setNewSubtaskStatus] = useState<GraphicSubtaskStatus>('NOT_STARTED');
+
+  // Inline subtask rename
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [inlineSubtaskTitle, setInlineSubtaskTitle] = useState('');
+
+  // Comprehensive Task & Subtasks Edit Modal
+  const [editingTask, setEditingTask] = useState<GraphicDesignTask | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editShowName, setEditShowName] = useState('');
+  const [editTiming, setEditTiming] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editPriority, setEditPriority] = useState<Priority>('NORMAL');
+  const [editStatus, setEditStatus] = useState<GraphicTaskStatus>('NOT_STARTED');
+  const [editAssignedUserId, setEditAssignedUserId] = useState('');
+  const [editDeliverableUrl, setEditDeliverableUrl] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAssetsText, setEditAssetsText] = useState('');
+  const [editReferencesText, setEditReferencesText] = useState('');
+  const [editSubtasks, setEditSubtasks] = useState<GraphicSubtask[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchTasks = async () => {
     try {
@@ -71,8 +98,22 @@ export default function GraphicsHubPage() {
 
   useEffect(() => {
     fetchTasks();
+    fetch('/api/shows')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.shows) setShows(data.shows);
+      })
+      .catch(() => {});
   }, []);
 
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const canEdit =
+    isAdmin ||
+    currentUser?.role === 'PRODUCER' ||
+    currentUser?.jobFunction === 'MOTION_GRAPHICS_DESIGNER' ||
+    currentUser?.jobFunction === 'GRAPHIC_DESIGNER';
+
+  // Quick status update on task card
   const handleUpdateStatus = async (taskId: string, newStatus: GraphicTaskStatus) => {
     try {
       const res = await fetch(`/api/graphics/${taskId}`, {
@@ -89,6 +130,7 @@ export default function GraphicsHubPage() {
     }
   };
 
+  // Quick subtask stage update (all 8 stages)
   const handleUpdateSubtaskStatus = async (
     taskId: string,
     subtaskId: string,
@@ -107,7 +149,6 @@ export default function GraphicsHubPage() {
         : st
     );
 
-    // If all subtasks are DONE, auto-mark task as READY_FOR_REVIEW or COMPLETED
     const allDone = updatedSubtasks.length > 0 && updatedSubtasks.every((s) => s.status === 'DONE');
     const autoTaskStatus = allDone ? 'READY_FOR_REVIEW' : task.status;
 
@@ -129,6 +170,7 @@ export default function GraphicsHubPage() {
     }
   };
 
+  // Inline add subtask to project
   const handleAddSubtask = async (taskId: string) => {
     if (!newSubtaskTitle.trim()) return;
     const task = tasks.find((t) => t.id === taskId);
@@ -162,16 +204,182 @@ export default function GraphicsHubPage() {
     }
   };
 
+  // Inline rename subtask
+  const handleSaveInlineSubtaskRename = async (taskId: string, subtaskId: string) => {
+    if (!inlineSubtaskTitle.trim()) {
+      setEditingSubtaskId(null);
+      return;
+    }
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const updatedSubtasks = task.subtasks.map((st) =>
+      st.id === subtaskId ? { ...st, title: inlineSubtaskTitle.trim() } : st
+    );
+
+    try {
+      const res = await fetch(`/api/graphics/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subtasks: updatedSubtasks }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? data.task : t)));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setEditingSubtaskId(null);
+      setInlineSubtaskTitle('');
+    }
+  };
+
+  // Delete individual subtask
+  const handleDeleteSubtask = async (taskId: string, subtaskId: string) => {
+    if (!confirm('Are you sure you want to delete this subtask?')) return;
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const updatedSubtasks = task.subtasks.filter((st) => st.id !== subtaskId);
+
+    try {
+      const res = await fetch(`/api/graphics/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subtasks: updatedSubtasks }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? data.task : t)));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Delete entire task
   const handleDeleteTask = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this graphics task?')) return;
     try {
       const res = await fetch(`/api/graphics/${taskId}`, { method: 'DELETE' });
       if (res.ok) {
-        setTasks((prev) => prev.map((t) => t).filter((t) => t.id !== taskId));
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
       }
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Open Edit Task Modal
+  const handleOpenEditModal = (task: GraphicDesignTask) => {
+    setEditingTask(task);
+    setEditTitle(task.title || task.projectName || '');
+    setEditShowName(task.showName || '');
+    setEditTiming(task.timing || '');
+    setEditDeadline(task.deadline ? task.deadline.slice(0, 16) : '');
+    setEditPriority(task.priority || 'NORMAL');
+    setEditStatus(task.status || 'NOT_STARTED');
+    setEditAssignedUserId(task.assignedUserId || 'usr_ilia_graphics');
+    setEditDeliverableUrl(task.deliverableUrl || '');
+    setEditDescription(task.description || '');
+    setEditAssetsText((task.assets || []).map((a) => a.url).join('\n'));
+    setEditReferencesText((task.references || []).map((r) => r.url).join('\n'));
+    setEditSubtasks(task.subtasks ? JSON.parse(JSON.stringify(task.subtasks)) : []);
+  };
+
+  // Save changes from Edit Task Modal
+  const handleSaveEditModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    if (!editTitle.trim()) {
+      alert('Task title / Project name is required.');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const parsedAssets = editAssetsText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((url, i) => ({
+          id: `ast_${Date.now()}_${i}`,
+          title: `Asset ${i + 1}`,
+          url,
+          addedAt: new Date().toISOString(),
+        }));
+
+      const parsedReferences = editReferencesText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((url, i) => ({
+          id: `ref_${Date.now()}_${i}`,
+          title: `Reference ${i + 1}`,
+          url,
+          addedAt: new Date().toISOString(),
+        }));
+
+      const res = await fetch(`/api/graphics/${editingTask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          projectName: editingTask.type === 'LONG_TERM' ? editTitle.trim() : undefined,
+          showName: editShowName.trim() || undefined,
+          timing: editTiming.trim() || undefined,
+          deadline: editDeadline || undefined,
+          priority: editPriority,
+          status: editStatus,
+          assignedUserId: editAssignedUserId,
+          deliverableUrl: editDeliverableUrl.trim() || undefined,
+          description: editDescription.trim(),
+          assets: parsedAssets,
+          references: parsedReferences,
+          subtasks: editSubtasks,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update task');
+      }
+
+      const data = await res.json();
+      setTasks((prev) => prev.map((t) => (t.id === editingTask.id ? data.task : t)));
+      setEditingTask(null);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Edit Modal: Subtask operations
+  const handleModalSubtaskChange = (index: number, field: 'title' | 'status', value: string) => {
+    setEditSubtasks((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      if (field === 'status' && value === 'DONE') {
+        updated[index].completedAt = new Date().toISOString();
+      }
+      return updated;
+    });
+  };
+
+  const handleModalDeleteSubtask = (index: number) => {
+    setEditSubtasks((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleModalAddSubtask = () => {
+    const newSub: GraphicSubtask = {
+      id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: `Subtask ${editSubtasks.length + 1}`,
+      status: 'NOT_STARTED',
+      createdAt: new Date().toISOString(),
+    };
+    setEditSubtasks((prev) => [...prev, newSub]);
   };
 
   const getUserDisplayName = (userId?: string) => {
@@ -388,6 +596,7 @@ export default function GraphicsHubPage() {
             <option value="NOT_STARTED">Not Started</option>
             <option value="IN_PROGRESS">In Progress</option>
             <option value="READY_FOR_REVIEW">Ready for Review</option>
+            <option value="REVISION_REQUIRED">Revision Required</option>
             <option value="COMPLETED">Completed</option>
           </select>
         </div>
@@ -553,8 +762,8 @@ export default function GraphicsHubPage() {
                     )}
                   </div>
 
-                  {/* Right side controls: Status dropdown and actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  {/* Right side controls: Status dropdown, Edit Task button, and actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <select
                       className="form-select"
                       style={{
@@ -585,14 +794,37 @@ export default function GraphicsHubPage() {
                       <option value="COMPLETED">Completed</option>
                     </select>
 
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      style={{ padding: '4px 8px', color: 'var(--text-muted)' }}
-                      onClick={() => handleDeleteTask(task.id)}
-                      title="Delete task"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    {/* Admin / Producer Edit Task Button */}
+                    {canEdit && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          padding: '4px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          color: 'var(--jns-gold)',
+                          borderColor: 'rgba(218, 165, 32, 0.3)',
+                        }}
+                        onClick={() => handleOpenEditModal(task)}
+                        title="Edit Task & Subtasks (Admin)"
+                      >
+                        <Pencil size={12} />
+                        <span>Edit Task</span>
+                      </button>
+                    )}
+
+                    {canEdit && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '4px 8px', color: 'var(--text-muted)' }}
+                        onClick={() => handleDeleteTask(task.id)}
+                        title="Delete task"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -725,18 +957,20 @@ export default function GraphicsHubPage() {
                           ({completedSubtasks} of {totalSubtasks} completed • {progressPercent}%)
                         </span>
                       </div>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '11px', padding: '2px 8px' }}
-                        onClick={() => {
-                          setAddingSubtaskTaskId(task.id);
-                          setNewSubtaskTitle('');
-                          setNewSubtaskStatus('NOT_STARTED');
-                        }}
-                      >
-                        <Plus size={12} />
-                        <span>Add Subtask</span>
-                      </button>
+                      {canEdit && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: '11px', padding: '2px 8px' }}
+                          onClick={() => {
+                            setAddingSubtaskTaskId(task.id);
+                            setNewSubtaskTitle('');
+                            setNewSubtaskStatus('NOT_STARTED');
+                          }}
+                        >
+                          <Plus size={12} />
+                          <span>Add Subtask</span>
+                        </button>
+                      )}
                     </div>
 
                     <div
@@ -763,6 +997,7 @@ export default function GraphicsHubPage() {
                       {task.subtasks.map((st) => {
                         const currentStageInfo =
                           SUBTASK_STAGES.find((s) => s.key === st.status) || SUBTASK_STAGES[0];
+                        const isInlineEditing = editingSubtaskId === st.id;
 
                         return (
                           <div
@@ -779,28 +1014,82 @@ export default function GraphicsHubPage() {
                               flexWrap: 'wrap',
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '200px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '220px' }}>
                               <div
                                 style={{
                                   width: '8px',
                                   height: '8px',
                                   borderRadius: '50%',
                                   backgroundColor: currentStageInfo.color,
+                                  flexShrink: 0,
                                 }}
                               />
-                              <span
-                                style={{
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  color: st.status === 'DONE' ? 'var(--text-muted)' : 'var(--text-main)',
-                                  textDecoration: st.status === 'DONE' ? 'line-through' : 'none',
-                                }}
-                              >
-                                {st.title}
-                              </span>
+                              {isInlineEditing ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    style={{ height: '26px', fontSize: '12px', padding: '2px 6px' }}
+                                    value={inlineSubtaskTitle}
+                                    onChange={(e) => setInlineSubtaskTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveInlineSubtaskRename(task.id, st.id);
+                                      if (e.key === 'Escape') setEditingSubtaskId(null);
+                                    }}
+                                    autoFocus
+                                  />
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    style={{ padding: '2px 6px', height: '26px' }}
+                                    onClick={() => handleSaveInlineSubtaskRename(task.id, st.id)}
+                                    title="Save name"
+                                  >
+                                    <Check size={12} />
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ padding: '2px 6px', height: '26px' }}
+                                    onClick={() => setEditingSubtaskId(null)}
+                                    title="Cancel"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span
+                                    style={{
+                                      fontSize: '13px',
+                                      fontWeight: 600,
+                                      color: st.status === 'DONE' ? 'var(--text-muted)' : 'var(--text-main)',
+                                      textDecoration: st.status === 'DONE' ? 'line-through' : 'none',
+                                    }}
+                                  >
+                                    {st.title}
+                                  </span>
+                                  {canEdit && (
+                                    <button
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: 'var(--text-muted)',
+                                        padding: '2px',
+                                      }}
+                                      onClick={() => {
+                                        setEditingSubtaskId(st.id);
+                                        setInlineSubtaskTitle(st.title);
+                                      }}
+                                      title="Rename subtask (Admin)"
+                                    >
+                                      <Pencil size={11} />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
-                            {/* 8-Stage Direct Selector */}
+                            {/* 8-Stage Direct Selector & Delete Subtask */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <select
                                 className="form-select"
@@ -828,6 +1117,22 @@ export default function GraphicsHubPage() {
                                   </option>
                                 ))}
                               </select>
+
+                              {canEdit && (
+                                <button
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    color: 'var(--text-muted)',
+                                    padding: '4px',
+                                  }}
+                                  onClick={() => handleDeleteSubtask(task.id, st.id)}
+                                  title="Delete subtask"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -895,6 +1200,331 @@ export default function GraphicsHubPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* COMPREHENSIVE EDIT TASK & SUBTASKS MODAL (ADMIN) */}
+      {editingTask && (
+        <div className="modal-overlay" onClick={() => setEditingTask(null)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '780px', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(218, 165, 32, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--jns-gold)',
+                  }}
+                >
+                  <Pencil size={15} />
+                </div>
+                <div>
+                  <div className="modal-title">
+                    Edit {editingTask.type === 'LONG_TERM' ? 'Long-Term Graphics Project' : 'Immediate Graphics Request'}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                    Admin configuration for task metadata, timing, deliverable, and subtasks pipeline
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setEditingTask(null)} style={{ color: 'var(--text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditModal} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.25rem' }}>
+              {/* Row 1: Title and Show */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label className="form-label">
+                    {editingTask.type === 'LONG_TERM' ? 'Global Project Name' : 'Request Title'} <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Show Name (Optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    list="edit-show-presets"
+                    placeholder="Show name..."
+                    value={editShowName}
+                    onChange={(e) => setEditShowName(e.target.value)}
+                  />
+                  <datalist id="edit-show-presets">
+                    {shows.map((s) => (
+                      <option key={s.id} value={s.name} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              {/* Row 2: Timing, Deadline, Priority */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Implemented Timing</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. 02:15 - 02:45"
+                    value={editTiming}
+                    onChange={(e) => setEditTiming(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Deadline</label>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    value={editDeadline}
+                    onChange={(e) => setEditDeadline(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Priority</label>
+                  <select
+                    className="form-select"
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as Priority)}
+                  >
+                    <option value="NORMAL">Normal</option>
+                    <option value="HIGH">High Priority</option>
+                    <option value="URGENT">Urgent Strategic</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 3: Status & Assigned Designer */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Task Status</label>
+                  <select
+                    className="form-select"
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as GraphicTaskStatus)}
+                  >
+                    <option value="NOT_STARTED">Not Started</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="READY_FOR_REVIEW">Ready for Review</option>
+                    <option value="REVISION_REQUIRED">Revision Required</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Assigned Designer</label>
+                  <select
+                    className="form-select"
+                    value={editAssignedUserId}
+                    onChange={(e) => setEditAssignedUserId(e.target.value)}
+                  >
+                    {allUsers
+                      .filter((u) => u.jobFunction === 'MOTION_GRAPHICS_DESIGNER' || u.jobFunction === 'GRAPHIC_DESIGNER' || u.role === 'ADMIN')
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.fullName || u.name} ({u.positionDisplay || u.jobFunction})
+                        </option>
+                      ))}
+                    {allUsers
+                      .filter((u) => u.jobFunction !== 'MOTION_GRAPHICS_DESIGNER' && u.jobFunction !== 'GRAPHIC_DESIGNER' && u.role !== 'ADMIN')
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.fullName || u.name} ({u.positionDisplay || u.role})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Deliverable URL */}
+              <div className="form-group">
+                <label className="form-label">Completed Deliverable URL (Dropbox / Premiere MOGRT / Drive)</label>
+                <input
+                  type="url"
+                  className="form-input"
+                  placeholder="https://dropbox.com/s/... or https://drive.google.com/..."
+                  value={editDeliverableUrl}
+                  onChange={(e) => setEditDeliverableUrl(e.target.value)}
+                />
+              </div>
+
+              {/* Description */}
+              <div className="form-group">
+                <label className="form-label">Description & Instructions</label>
+                <textarea
+                  className="form-textarea"
+                  rows={3}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Design brief, colors, typography, aspect ratio, audio cues..."
+                />
+              </div>
+
+              {/* Assets and References URLs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Asset URLs (1 per line)</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    placeholder="https://..."
+                    value={editAssetsText}
+                    onChange={(e) => setEditAssetsText(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Reference URLs (1 per line)</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    placeholder="https://..."
+                    value={editReferencesText}
+                    onChange={(e) => setEditReferencesText(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* SUBTASKS PIPELINE EDITOR (8 STAGES) */}
+              <div
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '0.75rem',
+                  }}
+                >
+                  <div>
+                    <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>
+                      Subtasks Pipeline ({editSubtasks.length})
+                    </strong>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Configure stages: Not Started, Concept, Design, Animation, Implementation, Finalizing, Audio, Done
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '11.5px', gap: '4px' }}
+                    onClick={handleModalAddSubtask}
+                  >
+                    <Plus size={13} />
+                    <span>Add Subtask</span>
+                  </button>
+                </div>
+
+                {editSubtasks.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    No subtasks attached. Click &quot;Add Subtask&quot; to build the pipeline.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {editSubtasks.map((st, idx) => (
+                      <div
+                        key={st.id || idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 8px',
+                          backgroundColor: 'var(--bg-card)',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', width: '18px' }}>
+                          #{idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ flex: 1, height: '28px', fontSize: '12px' }}
+                          value={st.title}
+                          onChange={(e) => handleModalSubtaskChange(idx, 'title', e.target.value)}
+                          placeholder="Subtask title..."
+                          required
+                        />
+                        <select
+                          className="form-select"
+                          style={{ width: '140px', height: '28px', fontSize: '11.5px', fontWeight: 600 }}
+                          value={st.status}
+                          onChange={(e) => handleModalSubtaskChange(idx, 'status', e.target.value)}
+                        >
+                          {SUBTASK_STAGES.map((stage) => (
+                            <option key={stage.key} value={stage.key}>
+                              {stage.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'var(--text-muted)',
+                            padding: '4px',
+                          }}
+                          onClick={() => handleModalDeleteSubtask(idx)}
+                          title="Delete subtask"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="modal-footer" style={{ padding: '0.75rem 0 0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setEditingTask(null)}
+                  disabled={savingEdit}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={savingEdit}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Save size={14} />
+                  <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

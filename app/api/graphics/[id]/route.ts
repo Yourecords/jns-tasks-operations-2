@@ -41,11 +41,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Update allowed fields
     if (body.title !== undefined) task.title = body.title.trim();
     if (body.projectName !== undefined) task.projectName = body.projectName.trim();
+    if (body.showName !== undefined) task.showName = body.showName.trim();
     if (body.description !== undefined) task.description = body.description.trim();
     if (body.timing !== undefined) task.timing = body.timing.trim();
     if (body.deadline !== undefined) task.deadline = body.deadline;
     if (body.priority !== undefined) task.priority = body.priority;
     if (body.deliverableUrl !== undefined) task.deliverableUrl = body.deliverableUrl.trim();
+    if (Array.isArray(body.assets)) task.assets = body.assets;
+    if (Array.isArray(body.references)) task.references = body.references;
 
     if (body.status !== undefined) {
       task.status = body.status;
