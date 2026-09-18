@@ -724,10 +724,27 @@ export default function TaxisPage() {
 
         <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'rgba(30, 41, 59, 0.6)', border: '1px solid var(--border-color, #334155)' }}>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary, #94a3b8)', fontWeight: 600 }}>Corporate Billing Account</div>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-            Gett Business IL (Connected)
-          </div>
+          {gettConfig?.connected ? (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#34d399', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                <span>Gett Business IL (Connected)</span>
+              </div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
+                Account #{gettConfig.accountId || 'Active'}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#f59e0b', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                <span>Not Connected (Simulation)</span>
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
+                {canManageGett ? 'Click "Connect Account" to link' : 'Local simulation mode active'}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

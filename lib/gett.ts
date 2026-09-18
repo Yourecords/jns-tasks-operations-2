@@ -49,13 +49,20 @@ export async function getGettBusinessConfig(): Promise<GettBusinessConfig> {
   if (envClientSecret && !merged.clientSecret) merged.clientSecret = envClientSecret;
   if (envMode) merged.environment = envMode;
 
-  if (merged.accountId || (merged.clientId && merged.clientSecret)) {
-    if (!stored || stored.connected !== false) {
-      merged.connected = true;
-      merged.connectionStatus = 'CONNECTED';
-      merged.statusMessage = `Connected to JNS Gett Business IL Account (${merged.accountId || 'Active'})`;
-    }
-  }
+  // Connection is only true if valid credentials exist AND the account has been explicitly connected
+  const hasCredentials = Boolean(
+    (merged.accountId && merged.accountId.trim().length > 0) ||
+    (merged.clientId && merged.clientId.trim().length > 0 && merged.clientSecret && merged.clientSecret.trim().length > 0)
+  );
+  const isExplicitlyConnected = Boolean(
+    stored?.connected || (envAccountId && stored?.connected !== false)
+  );
+
+  merged.connected = hasCredentials && isExplicitlyConnected;
+  merged.connectionStatus = merged.connected ? 'CONNECTED' : 'DISCONNECTED';
+  merged.statusMessage = merged.connected
+    ? `Connected to JNS Gett Business IL Account (${merged.accountId || 'Active'})`
+    : 'Not connected to Gett Business Israel account.';
 
   return merged;
 }
