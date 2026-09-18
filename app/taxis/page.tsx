@@ -723,15 +723,61 @@ export default function TaxisPage() {
         </div>
 
         <div style={{ padding: '16px 20px', borderRadius: '12px', background: 'rgba(30, 41, 59, 0.6)', border: '1px solid var(--border-color, #334155)' }}>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary, #94a3b8)', fontWeight: 600 }}>Corporate Billing Account</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary, #94a3b8)', fontWeight: 600 }}>Corporate Billing Account</div>
+            {gettConfig?.connected && canManageGett && (
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                disabled={connLoading}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#f87171',
+                  borderRadius: '5px',
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: connLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Disconnect Gett Business corporate billing account"
+              >
+                {connLoading ? '...' : 'Disconnect'}
+              </button>
+            )}
+          </div>
           {gettConfig?.connected ? (
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700, color: '#34d399', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                 <span>Gett Business IL (Connected)</span>
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
-                Account #{gettConfig.accountId || 'Active'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  Account #{gettConfig.accountId || 'Active'}
+                </div>
+                {canManageGett && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTestResult(null);
+                      setConnectionModalOpen(true);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#60a5fa',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0,
+                    }}
+                  >
+                    Edit Settings
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -740,8 +786,31 @@ export default function TaxisPage() {
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
                 <span>Not Connected (Simulation)</span>
               </div>
-              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
-                {canManageGett ? 'Click "Connect Account" to link' : 'Local simulation mode active'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  Local simulation mode
+                </div>
+                {canManageGett && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTestResult(null);
+                      setConnectionModalOpen(true);
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                      color: '#fef08a',
+                      borderRadius: '5px',
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Connect
+                  </button>
+                )}
               </div>
             </div>
           )}
