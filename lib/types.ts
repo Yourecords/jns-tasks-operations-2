@@ -593,4 +593,75 @@ export interface TaxiRide {
   updatedAt: string;
 }
 
+// Graphic Design Task Interfaces
+export type GraphicTaskType = 'LONG_TERM' | 'IMMEDIATE';
+
+export type GraphicSubtaskStatus =
+  | 'NOT_STARTED'
+  | 'CONCEPT'
+  | 'DESIGN'
+  | 'ANIMATION'
+  | 'IMPLEMENTATION'
+  | 'FINALIZING'
+  | 'AUDIO'
+  | 'DONE';
+
+export interface GraphicSubtask {
+  id: string;
+  title: string;
+  status: GraphicSubtaskStatus;
+  assignedUserId?: string;
+  notes?: string;
+  timing?: string;
+  assetUrls?: string[];
+  referenceUrls?: string[];
+  completedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type GraphicTaskStatus =
+  | 'NOT_STARTED'
+  | 'IN_PROGRESS'
+  | 'READY_FOR_REVIEW'
+  | 'REVISION_REQUIRED'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export interface GraphicAssetLink {
+  id: string;
+  title: string;
+  url: string;
+  type?: 'ASSET' | 'REFERENCE';
+  addedByUserId?: string;
+  addedAt: string;
+}
+
+export interface GraphicDesignTask {
+  id: string;
+  type: GraphicTaskType;
+  title: string;
+  projectName?: string;
+  showId?: string;
+  showName?: string;
+  productionId?: string;
+  productionTitle?: string;
+  description?: string;
+  timing?: string;
+  deadline?: string;
+  priority: Priority;
+  status: GraphicTaskStatus;
+  assignedUserId: string;
+  assignedUserName?: string;
+  createdById: string;
+  createdByName?: string;
+  subtasks: GraphicSubtask[];
+  assets: GraphicAssetLink[];
+  references: GraphicAssetLink[];
+  deliverableUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
 

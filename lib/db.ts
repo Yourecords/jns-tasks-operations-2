@@ -33,6 +33,7 @@ import {
   GearCondition,
   ChatMessage,
   TaxiRide,
+  GraphicDesignTask,
 } from './types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -55,6 +56,7 @@ export interface DatabaseSchema {
   gearCheckouts: GearCheckoutRecord[];
   chatMessages: ChatMessage[];
   taxiRides: TaxiRide[];
+  graphicDesignTasks: GraphicDesignTask[];
 }
 
 // Initial seed users representing typical production personas
@@ -1976,6 +1978,133 @@ export const SEED_TAXI_RIDES: TaxiRide[] = [
   },
 ];
 
+export const SEED_GRAPHIC_TASKS: GraphicDesignTask[] = [
+  {
+    id: 'gfx_proj_rebrand_2026',
+    type: 'LONG_TERM',
+    title: '2026 JNS Channel & Studio Graphics Overhaul',
+    projectName: '2026 JNS Channel & Studio Graphics Overhaul',
+    description: 'Comprehensive refresh of on-screen channel graphics package, lower thirds, full-screen map animations, breaking news stingers, and virtual studio video wall loops.',
+    deadline: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().split('T')[0],
+    priority: 'HIGH',
+    status: 'IN_PROGRESS',
+    assignedUserId: 'usr_ilia_graphics',
+    assignedUserName: 'Ilia Molchanov',
+    createdById: 'usr_yuri_admin',
+    createdByName: 'Yuri Skvirski',
+    subtasks: [
+      {
+        id: 'sub_gfx_01',
+        title: 'Color Palette & Typography Styleguide (4K Broadcast standards)',
+        status: 'DONE',
+        assignedUserId: 'usr_ilia_graphics',
+        createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+        completedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+      },
+      {
+        id: 'sub_gfx_02',
+        title: 'Unified Lower Thirds MOGRT template for Premiere editors',
+        status: 'IMPLEMENTATION',
+        assignedUserId: 'usr_ilia_graphics',
+        notes: 'Responsive text boxes with auto-scaling character padding for long titles.',
+        createdAt: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
+      },
+      {
+        id: 'sub_gfx_03',
+        title: '3D Middle East Map Projection & Drone flight-path lines',
+        status: 'ANIMATION',
+        assignedUserId: 'usr_ilia_graphics',
+        timing: '00:10 loop',
+        createdAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+      },
+      {
+        id: 'sub_gfx_04',
+        title: 'Breaking News Stinger with Sound Design',
+        status: 'AUDIO',
+        assignedUserId: 'usr_ilia_graphics',
+        createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+      },
+      {
+        id: 'sub_gfx_05',
+        title: 'Studio LED Video Wall Background Ambient Loops',
+        status: 'CONCEPT',
+        assignedUserId: 'usr_ilia_graphics',
+        createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+      },
+    ],
+    assets: [
+      {
+        id: 'asset_01',
+        title: 'JNS Vector Logo Pack (SVG/AI)',
+        url: 'https://jns.org/assets/brand-pack.zip',
+        type: 'ASSET',
+        addedAt: new Date().toISOString(),
+      },
+    ],
+    references: [
+      {
+        id: 'ref_01',
+        title: 'Bloomberg QuickTake Motion Graphics Reference',
+        url: 'https://youtube.com/watch?v=demo_motion_ref',
+        type: 'REFERENCE',
+        addedAt: new Date().toISOString(),
+      },
+    ],
+    createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'gfx_req_iran_deal_quote',
+    type: 'IMMEDIATE',
+    title: 'Iran Nuclear Deal Quote Card Graphic',
+    showId: 'show_the_quad_shows',
+    showName: 'The QUAD (Shows)',
+    description: 'Quote card for Fleur Hassan-Nahoum segment comparing EU vs US sanctions language. White typography on navy backdrop.',
+    timing: '08:45 - 09:10',
+    deadline: new Date().toISOString().split('T')[0] + 'T16:00',
+    priority: 'URGENT',
+    status: 'IN_PROGRESS',
+    assignedUserId: 'usr_ilia_graphics',
+    assignedUserName: 'Ilia Molchanov',
+    createdById: 'usr_zach_producer',
+    createdByName: 'Zach Sicherman',
+    subtasks: [],
+    assets: [],
+    references: [
+      {
+        id: 'ref_02',
+        title: 'Knesset Press Briefing Reference PDF',
+        url: 'https://jns.org/briefings/iran-sanctions-2026.pdf',
+        type: 'REFERENCE',
+        addedAt: new Date().toISOString(),
+      },
+    ],
+    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'gfx_req_red_sea_map',
+    type: 'IMMEDIATE',
+    title: 'Red Sea Naval Corridor Map Animation',
+    showId: 'show_axis_of_truth_shows',
+    showName: 'Axis Of Truth (Shows)',
+    description: 'Map overlay tracing Bab el-Mandeb strait shipping lanes with highlighted radar arcs.',
+    timing: '03:20 - 04:00',
+    deadline: new Date(Date.now() + 24 * 3600 * 1000).toISOString().split('T')[0] + 'T12:00',
+    priority: 'HIGH',
+    status: 'NOT_STARTED',
+    assignedUserId: 'usr_ilia_graphics',
+    assignedUserName: 'Ilia Molchanov',
+    createdById: 'usr_zach_producer',
+    createdByName: 'Zach Sicherman',
+    subtasks: [],
+    assets: [],
+    references: [],
+    createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
 export function getDb(): DatabaseSchema {
   if (globalThis.__jnsDbCache) {
     return globalThis.__jnsDbCache;
@@ -2006,6 +2135,7 @@ export function getDb(): DatabaseSchema {
       gearCheckouts: SEED_GEAR_CHECKOUTS,
       chatMessages: generateSeedChatMessages(),
       taxiRides: SEED_TAXI_RIDES,
+      graphicDesignTasks: SEED_GRAPHIC_TASKS,
     };
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
@@ -2034,6 +2164,10 @@ export function getDb(): DatabaseSchema {
     }
     if (!parsed.taxiRides || parsed.taxiRides.length === 0) {
       parsed.taxiRides = SEED_TAXI_RIDES;
+      mutated = true;
+    }
+    if (!parsed.graphicDesignTasks) {
+      parsed.graphicDesignTasks = SEED_GRAPHIC_TASKS;
       mutated = true;
     }
     if (parsed.systemSettings && (parsed.systemSettings.productionEmailUrl === 'mailto:production@jns.org' || parsed.systemSettings.productionEmailUrl === 'https://gmail.com')) {
@@ -2073,6 +2207,7 @@ export function getDb(): DatabaseSchema {
       gearCheckouts: SEED_GEAR_CHECKOUTS,
       chatMessages: generateSeedChatMessages(),
       taxiRides: SEED_TAXI_RIDES,
+      graphicDesignTasks: SEED_GRAPHIC_TASKS,
     };
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(fallbackData, null, 2), 'utf-8');
@@ -2124,6 +2259,10 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
         pgState.taxiRides = SEED_TAXI_RIDES;
         pgMutated = true;
       }
+      if (!pgState.graphicDesignTasks || pgState.graphicDesignTasks.length === 0) {
+        pgState.graphicDesignTasks = SEED_GRAPHIC_TASKS;
+        pgMutated = true;
+      }
       if (pgMutated) {
         await saveStateToPostgres(pgState);
       }
@@ -2148,6 +2287,7 @@ export async function getDbAsync(): Promise<DatabaseSchema> {
       gearCheckouts: SEED_GEAR_CHECKOUTS,
       chatMessages: generateSeedChatMessages(),
       taxiRides: SEED_TAXI_RIDES,
+      graphicDesignTasks: SEED_GRAPHIC_TASKS,
     };
     await saveStateToPostgres(freshData);
     globalThis.__jnsDbCache = freshData;
@@ -2184,6 +2324,7 @@ export function resetToSeedData(): DatabaseSchema {
     gearCheckouts: SEED_GEAR_CHECKOUTS,
     chatMessages: generateSeedChatMessages(),
     taxiRides: SEED_TAXI_RIDES,
+    graphicDesignTasks: SEED_GRAPHIC_TASKS,
   };
   saveDb(freshData);
   return freshData;

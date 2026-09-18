@@ -12,6 +12,12 @@ import {
   AlertCircle,
   Sparkles,
   Check,
+  Palette,
+  Plus,
+  Trash2,
+  Clock,
+  Upload,
+  ExternalLink,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { countWords, isEligibleEditor, findStudioConflict } from '@/lib/utils';
@@ -108,6 +114,26 @@ export default function QuickActionModal({
   const [ideaFormat, setIdeaFormat] = useState('Studio Show');
   const [ideaLength, setIdeaLength] = useState('25 min');
   const [ideaCategory, setIdeaCategory] = useState('Studio Show');
+
+  // Graphics Task form states (Quick Action)
+  const [gfxType, setGfxType] = useState<'IMMEDIATE' | 'LONG_TERM'>('IMMEDIATE');
+  const [gfxTitle, setGfxTitle] = useState('');
+  const [gfxShowName, setGfxShowName] = useState('');
+  const [gfxDeadline, setGfxDeadline] = useState(new Date().toISOString().split('T')[0] + 'T17:00');
+  const [gfxTiming, setGfxTiming] = useState('');
+  const [gfxDescription, setGfxDescription] = useState('');
+  const [gfxPriority, setGfxPriority] = useState('NORMAL');
+  const [gfxAssignedUserId, setGfxAssignedUserId] = useState('usr_ilia_graphics');
+  const [gfxAssetsText, setGfxAssetsText] = useState('');
+  const [gfxReferencesText, setGfxReferencesText] = useState('');
+  const [gfxSubtasks, setGfxSubtasks] = useState<{ id: string; title: string; status: string }[]>([
+    { id: '1', title: 'Concept & Storyboard', status: 'NOT_STARTED' },
+    { id: '2', title: 'Design & Styleframes', status: 'NOT_STARTED' },
+    { id: '3', title: 'Animation & Motion', status: 'NOT_STARTED' },
+    { id: '4', title: 'Implementation & Premiere MOGRT', status: 'NOT_STARTED' },
+  ]);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [newSubtaskStatus, setNewSubtaskStatus] = useState('NOT_STARTED');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -441,6 +467,67 @@ export default function QuickActionModal({
     }
   };
 
+  const handleCreateGraphics = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    const mainTitle = gfxTitle.trim();
+    if (!mainTitle) {
+      setErrorMsg(gfxType === 'LONG_TERM' ? 'Project name is required.' : 'Graphic request title is required.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const parsedAssets = gfxAssetsText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((url, i) => ({ id: `ast_${Date.now()}_${i}`, title: `Asset ${i + 1}`, url }));
+
+      const parsedReferences = gfxReferencesText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((url, i) => ({ id: `ref_${Date.now()}_${i}`, title: `Reference ${i + 1}`, url }));
+
+      const res = await fetch('/api/graphics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: gfxType,
+          title: mainTitle,
+          projectName: gfxType === 'LONG_TERM' ? mainTitle : undefined,
+          showName: gfxType === 'IMMEDIATE' ? gfxShowName : undefined,
+          deadline: gfxDeadline || undefined,
+          timing: gfxTiming || undefined,
+          description: gfxDescription,
+          priority: gfxPriority,
+          assignedUserId: gfxAssignedUserId,
+          subtasks: gfxType === 'LONG_TERM' ? gfxSubtasks : [],
+          assets: parsedAssets,
+          references: parsedReferences,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setSuccessMsg(
+        gfxType === 'LONG_TERM'
+          ? 'Long-term graphics project created!'
+          : 'Graphics request successfully submitted!'
+      );
+      setTimeout(() => {
+        onClose();
+        if (onSuccess) onSuccess();
+      }, 700);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Word counter calculations
   const impCombinedText = `${impSituation} ${impSuggested} ${impWhyHelpful}`;
   const impWordCount = countWords(impCombinedText);
@@ -509,6 +596,18 @@ export default function QuickActionModal({
               </button>
             </>
           )}
+          <button
+            className={`filter-tab ${activeTab === 'GRAPHICS' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('GRAPHICS'); setErrorMsg(''); }}
+            style={{
+              borderColor: activeTab === 'GRAPHICS' ? 'var(--jns-gold)' : undefined,
+              color: activeTab === 'GRAPHICS' ? 'var(--jns-gold)' : undefined,
+              fontWeight: 700,
+            }}
+          >
+            <Palette size={13} style={{ display: 'inline', marginRight: '4px' }} />
+            New Graphics
+          </button>
           <button
             className={`filter-tab ${activeTab === 'EQUIPMENT' ? 'active' : ''}`}
             onClick={() => { setActiveTab('EQUIPMENT'); setErrorMsg(''); }}
@@ -1571,6 +1670,454 @@ export default function QuickActionModal({
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={loading}>
                   {loading ? 'Submitting...' : 'Submit Show Idea'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* TAB: CREATE NEW GRAPHICS (Item: Immediate Request vs Long-Term Project) */}
+          {activeTab === 'GRAPHICS' && (
+            <form onSubmit={handleCreateGraphics} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {/* Type Toggle: Immediate Show Request vs Long-Term Project */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  padding: '6px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGfxType('IMMEDIATE');
+                    setErrorMsg('');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: gfxType === 'IMMEDIATE' ? 'var(--jns-gold)' : 'transparent',
+                    color: gfxType === 'IMMEDIATE' ? '#000' : 'var(--text-secondary)',
+                    fontWeight: gfxType === 'IMMEDIATE' ? 800 : 600,
+                    fontSize: '12.5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Sparkles size={14} />
+                  <span>Immediate Show Request</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGfxType('LONG_TERM');
+                    setErrorMsg('');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: gfxType === 'LONG_TERM' ? 'var(--jns-gold)' : 'transparent',
+                    color: gfxType === 'LONG_TERM' ? '#000' : 'var(--text-secondary)',
+                    fontWeight: gfxType === 'LONG_TERM' ? 800 : 600,
+                    fontSize: '12.5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Palette size={14} />
+                  <span>Long-Term Project (8-Stage Pipeline)</span>
+                </button>
+              </div>
+
+              {/* SHARED OR IMMEDIATE FIELDS */}
+              {gfxType === 'IMMEDIATE' ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">
+                        Request Title <span className="req">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. Quote Card - Iran Sanctions, Knesset Map Graphic"
+                        value={gfxTitle}
+                        onChange={(e) => setGfxTitle(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Show Name</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        list="active-show-presets"
+                        placeholder="Select show or type custom name..."
+                        value={gfxShowName}
+                        onChange={(e) => setGfxShowName(e.target.value)}
+                      />
+                      <datalist id="active-show-presets">
+                        {shows.map((s) => (
+                          <option key={s.id} value={s.name} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">
+                        Deadline (Date & Time) <span className="req">*</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        className="form-input"
+                        value={gfxDeadline}
+                        onChange={(e) => setGfxDeadline(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Implemented Timing (Optional)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 02:15 - 02:45, 10-second lower third"
+                        value={gfxTiming}
+                        onChange={(e) => setGfxTiming(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Description & Design Instructions</label>
+                    <textarea
+                      className="form-textarea"
+                      placeholder="Specify required text, lower third titles, maps, colors, aspect ratios, or cue notes..."
+                      value={gfxDescription}
+                      onChange={(e) => setGfxDescription(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Assets to Incorporate (URLs, 1 per line)</label>
+                      <textarea
+                        className="form-textarea"
+                        placeholder="https://dropbox.com/s/logos.zip&#10;https://drive.google.com/file/d/photo.png"
+                        value={gfxAssetsText}
+                        onChange={(e) => setGfxAssetsText(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Visual References / Examples (URLs, 1 per line)</label>
+                      <textarea
+                        className="form-textarea"
+                        placeholder="https://youtube.com/watch?v=...&#10;https://frame.io/..."
+                        value={gfxReferencesText}
+                        onChange={(e) => setGfxReferencesText(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Assigned Designer</label>
+                      <select
+                        className="form-select"
+                        value={gfxAssignedUserId}
+                        onChange={(e) => setGfxAssignedUserId(e.target.value)}
+                      >
+                        {allUsers
+                          .filter((u) => u.jobFunction === 'MOTION_GRAPHICS_DESIGNER' || u.jobFunction === 'GRAPHIC_DESIGNER' || u.role === 'ADMIN')
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.fullName || u.name} ({u.positionDisplay || u.jobFunction})
+                            </option>
+                          ))}
+                        {allUsers
+                          .filter((u) => u.jobFunction !== 'MOTION_GRAPHICS_DESIGNER' && u.jobFunction !== 'GRAPHIC_DESIGNER' && u.role !== 'ADMIN')
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.fullName || u.name} ({u.positionDisplay || u.role})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Priority</label>
+                      <select
+                        className="form-select"
+                        value={gfxPriority}
+                        onChange={(e) => setGfxPriority(e.target.value as any)}
+                      >
+                        <option value="NORMAL">Normal</option>
+                        <option value="HIGH">High Priority</option>
+                        <option value="URGENT">Urgent (Immediate Turnaround)</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* LONG TERM PROJECT FORM */
+                <>
+                  <div className="form-group">
+                    <label className="form-label">
+                      Global Project Name <span className="req">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. 2026 JNS Channel & Studio Graphics Overhaul, Election 2026 Graphics Package"
+                      value={gfxTitle}
+                      onChange={(e) => setGfxTitle(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Project Scope & Concept</label>
+                    <textarea
+                      className="form-textarea"
+                      placeholder="Outline the overall goals, deliverables (stingers, video wall loops, lower thirds), and deliverables schedule..."
+                      value={gfxDescription}
+                      onChange={(e) => setGfxDescription(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Target Completion Date</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={gfxDeadline ? gfxDeadline.split('T')[0] : ''}
+                        onChange={(e) => setGfxDeadline(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Lead Designer</label>
+                      <select
+                        className="form-select"
+                        value={gfxAssignedUserId}
+                        onChange={(e) => setGfxAssignedUserId(e.target.value)}
+                      >
+                        {allUsers.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.fullName || u.name} ({u.positionDisplay || u.jobFunction})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Project Priority</label>
+                      <select
+                        className="form-select"
+                        value={gfxPriority}
+                        onChange={(e) => setGfxPriority(e.target.value as any)}
+                      >
+                        <option value="NORMAL">Normal</option>
+                        <option value="HIGH">High Priority</option>
+                        <option value="URGENT">Urgent Strategic</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 8-STAGE SUBTASKS BUILDER */}
+                  <div
+                    style={{
+                      background: 'var(--bg-card-subtle)',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--jns-gold)' }}>
+                        Project Subtasks & Status Milestones ({gfxSubtasks.length})
+                      </span>
+                      <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                        Status stages: not started / concept / design / animation / implementation / finalizing / audio / done
+                      </span>
+                    </div>
+
+                    {/* Subtask list */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                      {gfxSubtasks.map((sub, idx) => (
+                        <div
+                          key={sub.id}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 170px 32px',
+                            gap: '6px',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={sub.title}
+                            onChange={(e) => {
+                              const updated = [...gfxSubtasks];
+                              updated[idx].title = e.target.value;
+                              setGfxSubtasks(updated);
+                            }}
+                            style={{ fontSize: '12px', padding: '5px 8px' }}
+                          />
+                          <select
+                            className="form-select"
+                            value={sub.status}
+                            onChange={(e) => {
+                              const updated = [...gfxSubtasks];
+                              updated[idx].status = e.target.value;
+                              setGfxSubtasks(updated);
+                            }}
+                            style={{ fontSize: '11px', padding: '5px 6px' }}
+                          >
+                            <option value="NOT_STARTED">Not Started</option>
+                            <option value="CONCEPT">Concept</option>
+                            <option value="DESIGN">Design</option>
+                            <option value="ANIMATION">Animation</option>
+                            <option value="IMPLEMENTATION">Implementation</option>
+                            <option value="FINALIZING">Finalizing</option>
+                            <option value="AUDIO">Audio</option>
+                            <option value="DONE">Done</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGfxSubtasks(gfxSubtasks.filter((_, i) => i !== idx));
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#f87171',
+                              cursor: 'pointer',
+                              padding: '4px',
+                            }}
+                            title="Remove subtask"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add new subtask row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 170px 60px', gap: '6px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Add new subtask title..."
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newSubtaskTitle.trim()) {
+                            e.preventDefault();
+                            setGfxSubtasks([
+                              ...gfxSubtasks,
+                              { id: `sub_${Date.now()}`, title: newSubtaskTitle.trim(), status: newSubtaskStatus },
+                            ]);
+                            setNewSubtaskTitle('');
+                          }
+                        }}
+                        style={{ fontSize: '12px', padding: '5px 8px' }}
+                      />
+                      <select
+                        className="form-select"
+                        value={newSubtaskStatus}
+                        onChange={(e) => setNewSubtaskStatus(e.target.value)}
+                        style={{ fontSize: '11px', padding: '5px 6px' }}
+                      >
+                        <option value="NOT_STARTED">Not Started</option>
+                        <option value="CONCEPT">Concept</option>
+                        <option value="DESIGN">Design</option>
+                        <option value="ANIMATION">Animation</option>
+                        <option value="IMPLEMENTATION">Implementation</option>
+                        <option value="FINALIZING">Finalizing</option>
+                        <option value="AUDIO">Audio</option>
+                        <option value="DONE">Done</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newSubtaskTitle.trim()) {
+                            setGfxSubtasks([
+                              ...gfxSubtasks,
+                              { id: `sub_${Date.now()}`, title: newSubtaskTitle.trim(), status: newSubtaskStatus },
+                            ]);
+                            setNewSubtaskTitle('');
+                          }
+                        }}
+                        className="btn btn-secondary btn-xs"
+                        style={{ height: '31px', fontSize: '11px' }}
+                      >
+                        <Plus size={12} /> Add
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Brand Assets (URLs, 1 per line)</label>
+                      <textarea
+                        className="form-textarea"
+                        placeholder="Vector logos, fonts, color swatches..."
+                        value={gfxAssetsText}
+                        onChange={(e) => setGfxAssetsText(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Design References (URLs, 1 per line)</label>
+                      <textarea
+                        className="form-textarea"
+                        placeholder="Style inspiration, motion reels, storyboards..."
+                        value={gfxReferencesText}
+                        onChange={(e) => setGfxReferencesText(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="modal-footer" style={{ padding: '0.75rem 0 0' }}>
+                <button type="button" className="btn btn-secondary" onClick={onClose}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  <Palette size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                  {loading
+                    ? 'Creating...'
+                    : gfxType === 'LONG_TERM'
+                    ? 'Create Long-Term Project'
+                    : 'Submit Graphics Request'}
                 </button>
               </div>
             </form>

@@ -31,6 +31,7 @@ import {
   Moon,
   Eye,
   Car,
+  Palette,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
@@ -54,6 +55,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     blocked: 0,
     waitingApproval: 0,
     activeTaxis: 0,
+    activeGraphics: 0,
   });
 
   const fetchBadges = async () => {
@@ -61,6 +63,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
       const res = await fetch('/api/productions');
       const data = await res.json();
       let activeTaxisCount = 0;
+      let activeGfxCount = 0;
 
       try {
         const taxiRes = await fetch('/api/taxis');
@@ -70,6 +73,16 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
         }
       } catch (e) {
         // ignore taxi badge fetch error
+      }
+
+      try {
+        const gfxRes = await fetch('/api/graphics');
+        if (gfxRes.ok) {
+          const gfxData = await gfxRes.json();
+          activeGfxCount = (gfxData.tasks || []).filter((t: any) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length;
+        }
+      } catch (e) {
+        // ignore gfx badge fetch error
       }
 
       if (data.productions) {
@@ -108,6 +121,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
           blocked: blockedCount,
           waitingApproval: approvalCount,
           activeTaxis: activeTaxisCount,
+          activeGraphics: activeGfxCount,
         });
       }
     } catch (err) {
@@ -137,6 +151,13 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     { label: 'Productions', href: '/productions', icon: Film },
     { label: 'Pilots', href: '/pilots', icon: Compass },
     { label: 'Studio Rentals', href: '/rentals', icon: Building2 },
+    {
+      label: 'Graphic Design',
+      href: '/graphics',
+      icon: Palette,
+      badge: badgeCounts.activeGraphics > 0 ? badgeCounts.activeGraphics : undefined,
+      badgeClass: 'nav-badge-gold',
+    },
     { label: 'Production Calendar', href: '/calendar', icon: Calendar },
     ...(canManageTaxis(currentUser)
       ? [

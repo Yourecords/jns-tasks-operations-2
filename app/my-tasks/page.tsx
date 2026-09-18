@@ -9,16 +9,19 @@ import {
   CheckCircle2,
   Filter,
   Clock,
-  ChevronRight
+  ChevronRight,
+  Palette,
+  ExternalLink,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
-import { Production, ProductionTask } from '@/lib/types';
+import { Production, ProductionTask, GraphicDesignTask } from '@/lib/types';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
 
 export default function MyTasksPage() {
   const { currentUser, allUsers } = useUser();
   const [productions, setProductions] = useState<Production[]>([]);
+  const [graphicTasks, setGraphicTasks] = useState<GraphicDesignTask[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters (Item 18)
@@ -35,6 +38,15 @@ export default function MyTasksPage() {
       const data = await res.json();
       if (data.productions) {
         setProductions(data.productions);
+      }
+
+      const gfxRes = await fetch('/api/graphics');
+      if (gfxRes.ok) {
+        const gfxData = await gfxRes.json();
+        const myGfx = (gfxData.tasks || []).filter(
+          (t: GraphicDesignTask) => currentUser && (t.assignedUserId === currentUser.id || currentUser.role === 'ADMIN')
+        );
+        setGraphicTasks(myGfx);
       }
     } catch (err) {
       console.error(err);
@@ -183,6 +195,71 @@ export default function MyTasksPage() {
           Show All
         </button>
       </div>
+
+      {/* Assigned Graphic Tasks (if any) */}
+      {graphicTasks.length > 0 && (
+        <div
+          className="section-panel"
+          style={{
+            marginBottom: '1.25rem',
+            padding: '1.25rem',
+            borderLeft: '4px solid var(--jns-gold)',
+            background: 'var(--bg-card)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Palette size={18} color="var(--jns-gold)" />
+              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                Graphic Design Tasks Assigned to You ({graphicTasks.length})
+              </h3>
+            </div>
+            <Link href="/graphics" className="btn btn-secondary btn-sm" style={{ fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span>Open Graphics Hub</span>
+              <ExternalLink size={12} />
+            </Link>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
+            {graphicTasks.map((gt) => (
+              <div
+                key={gt.id}
+                style={{
+                  padding: '10px 12px',
+                  backgroundColor: 'var(--bg-card-subtle)',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-main)' }}>
+                    {gt.title || gt.projectName}
+                  </div>
+                  <span className={`badge ${gt.type === 'LONG_TERM' ? 'badge-gold' : 'badge-blue'}`} style={{ fontSize: '10px' }}>
+                    {gt.type === 'LONG_TERM' ? 'PROJECT' : 'REQUEST'}
+                  </span>
+                </div>
+                {gt.showName && (
+                  <div style={{ fontSize: '11px', color: '#38bdf8', marginTop: '2px', fontWeight: 600 }}>
+                    Show: {gt.showName}
+                  </div>
+                )}
+                {gt.timing && (
+                  <div style={{ fontSize: '11px', color: '#eab308', marginTop: '2px' }}>
+                    ⏱ Timing: {gt.timing}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11.5px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Status: <strong>{gt.status.replace(/_/g, ' ')}</strong></span>
+                  <Link href="/graphics" style={{ color: 'var(--jns-gold)', fontWeight: 600 }}>
+                    View & update →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tasks Table */}
       <div className="section-panel">

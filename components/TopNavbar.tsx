@@ -129,7 +129,7 @@ export default function TopNavbar({
         <button
           className="btn btn-primary btn-sm top-nav-quick-btn"
           onClick={onOpenQuickAction}
-          title="Create New Episode, Pilot, Rental, or Request"
+          title="Create New Episode, Pilot, Rental, Graphics, or Request"
         >
           <Plus size={15} />
           <span className="quick-action-text">Quick Action</span>

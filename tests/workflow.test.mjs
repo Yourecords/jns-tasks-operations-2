@@ -37,6 +37,8 @@ import { GET as getMessages, POST as postMessages, PATCH as patchMessages } from
 import { GET as getTaxis, POST as postTaxis } from '../app/api/taxis/route';
 import { PATCH as patchTaxi } from '../app/api/taxis/[id]/route';
 import { GET as getTaxiConnection, POST as postTaxiConnection } from '../app/api/taxis/connection/route';
+import { GET as getGraphics, POST as postGraphics } from '../app/api/graphics/route';
+import { GET as getGraphicItem, PATCH as patchGraphicItem, DELETE as deleteGraphicItem } from '../app/api/graphics/[id]/route';
 import { middleware } from '../middleware';
 
 console.log('--- RUNNING JNS VIDEO PRODUCTION OPERATIONS TEST SUITE ---\n');
@@ -1660,13 +1662,116 @@ try {
   console.error('✗ Test 26 Failed', err);
 }
 
+// Test 27: Graphic Design Task Management & Quick Action Creation
+try {
+  // 1. Create Immediate Graphic Request (Title, Show, Timing, Deadline, Assets, References)
+  const immReq = new NextRequest('http://localhost:3000/api/graphics', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      type: 'IMMEDIATE',
+      title: 'Quote Card - US-Israel Strategic Accord',
+      showName: 'The Quad',
+      deadline: '2026-09-21T18:00',
+      timing: '04:12 - 04:40',
+      description: 'Full-screen graphic displaying Netanyahu quote with dual flag backdrop',
+      priority: 'HIGH',
+      assignedUserId: 'usr_ilia_graphics',
+      assets: [{ title: 'Press Release PDF', url: 'https://jns.org/assets/press-release.pdf' }],
+      references: [{ title: 'Previous Quad Style', url: 'https://youtube.com/watch?v=ref123' }],
+    }),
+  });
+  const immRes = await postGraphics(immReq);
+  assert.strictEqual(immRes.status, 201, 'Immediate graphic request creation must succeed');
+  const immData = await immRes.json();
+  assert.strictEqual(immData.task.type, 'IMMEDIATE');
+  assert.strictEqual(immData.task.showName, 'The Quad');
+  assert.strictEqual(immData.task.timing, '04:12 - 04:40');
+  assert.strictEqual(immData.task.assets.length, 1);
+  assert.strictEqual(immData.task.references.length, 1);
+  const immTaskId = immData.task.id;
+
+  // 2. Create Long-Term Project with the 8 lifecycle stages
+  const STAGES_8 = [
+    'NOT_STARTED',
+    'CONCEPT',
+    'DESIGN',
+    'ANIMATION',
+    'IMPLEMENTATION',
+    'FINALIZING',
+    'AUDIO',
+    'DONE',
+  ];
+  const longReq = new NextRequest('http://localhost:3000/api/graphics', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      type: 'LONG_TERM',
+      projectName: '2026 Channel Identity & Studio Virtual Wall Overhaul',
+      description: 'Complete studio motion packaging across all 8 stages',
+      deadline: '2026-10-30',
+      priority: 'URGENT',
+      assignedUserId: 'usr_ilia_graphics',
+      subtasks: STAGES_8.map((stage, i) => ({
+        title: `Phase ${i + 1}: ${stage}`,
+        status: stage === 'NOT_STARTED' ? 'NOT_STARTED' : stage,
+      })),
+    }),
+  });
+  const longRes = await postGraphics(longReq);
+  assert.strictEqual(longRes.status, 201, 'Long-term project creation must succeed');
+  const longData = await longRes.json();
+  assert.strictEqual(longData.task.type, 'LONG_TERM');
+  assert.strictEqual(longData.task.subtasks.length, 8, 'Must have all 8 subtasks');
+  const longTaskId = longData.task.id;
+
+  // 3. Update subtask stage and task status
+  const patchReq = new NextRequest(`http://localhost:3000/api/graphics/${immTaskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      status: 'COMPLETED',
+      deliverableUrl: 'https://dropbox.com/s/jns_quote_card_v1.mov',
+    }),
+  });
+  const patchRes = await patchGraphicItem(patchReq, { params: Promise.resolve({ id: immTaskId }) });
+  assert.strictEqual(patchRes.status, 200, 'Updating task status must succeed');
+  const patchData = await patchRes.json();
+  assert.strictEqual(patchData.task.status, 'COMPLETED');
+  assert.strictEqual(patchData.task.deliverableUrl, 'https://dropbox.com/s/jns_quote_card_v1.mov');
+
+  // 4. Retrieve via GET /api/graphics
+  const getReq = new NextRequest('http://localhost:3000/api/graphics', {
+    method: 'GET',
+    headers: { cookie: `jns_user_id=${producerUser.id}` },
+  });
+  const getRes = await getGraphics(getReq);
+  assert.strictEqual(getRes.status, 200);
+  const allGfx = await getRes.json();
+  assert(allGfx.tasks.length >= 2, 'Retrieved tasks must include created tasks');
+
+  console.log('✓ Test 27 Passed: Graphic Design Hub & Quick Action: Immediate requests & 8-stage long-term projects verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 27 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 26 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 27 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 26) {
+if (testsPassed !== 27) {
   process.exit(1);
 }
