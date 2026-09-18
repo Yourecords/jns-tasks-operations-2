@@ -1577,13 +1577,96 @@ try {
   console.error('✗ Test 25 Failed', err);
 }
 
+// Test 26: In-App Messenger: Edit message allowed for 1 hour after sent, blocked thereafter
+try {
+  // 1. Post a new message from Producer
+  const postReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      channelType: 'TEAM',
+      content: 'Original message before typo fix',
+    }),
+  });
+  const postRes = await postMessages(postReq);
+  assert.strictEqual(postRes.status, 201, 'Sending message should succeed');
+  const postData = await postRes.json();
+  const msgId = postData.message.id;
+
+  // 2. Edit within 1 hour as sender -> should succeed
+  const editReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      messageId: msgId,
+      content: 'Corrected message content within 1 hour',
+    }),
+  });
+  const editRes = await patchMessages(editReq);
+  assert.strictEqual(editRes.status, 200, 'Editing message within 1 hour by author must succeed');
+  const editData = await editRes.json();
+  assert.strictEqual(editData.message.content, 'Corrected message content within 1 hour');
+  assert.strictEqual(editData.message.isEdited, true, 'Message must be flagged as isEdited: true');
+  assert(editData.message.editedAt, 'Message must have editedAt timestamp');
+
+  // 3. Different user attempting to edit -> 403 Forbidden
+  const rogueReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({
+      messageId: msgId,
+      content: 'Unauthorized edit attempt by different user',
+    }),
+  });
+  const rogueRes = await patchMessages(rogueReq);
+  assert.strictEqual(rogueRes.status, 403, 'Non-author edit attempt must return 403 Forbidden');
+
+  // 4. Age the message to > 1 hour ago (e.g. 70 minutes ago)
+  const currentDb = getDb();
+  const storedMsg = currentDb.chatMessages.find((m) => m.id === msgId);
+  assert(storedMsg, 'Stored message must be found in db');
+  storedMsg.createdAt = new Date(Date.now() - 70 * 60 * 1000).toISOString();
+  await saveDbAsync(currentDb);
+
+  // 5. Attempting to edit after 1 hour -> 403 Forbidden
+  const expiredReq = new NextRequest('http://localhost:3000/api/messages', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      messageId: msgId,
+      content: 'Late edit attempt after 1 hour expiration',
+    }),
+  });
+  const expiredRes = await patchMessages(expiredReq);
+  assert.strictEqual(expiredRes.status, 403, 'Editing message after 1 hour must return 403 Forbidden');
+  const expiredData = await expiredRes.json();
+  assert(expiredData.error.includes('1 hour'), 'Error message must state 1 hour limit');
+
+  console.log('✓ Test 26 Passed: In-App Messenger: Edit message allowed for 1 hour after sent, blocked thereafter');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 26 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 25 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 26 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 25) {
+if (testsPassed !== 26) {
   process.exit(1);
 }

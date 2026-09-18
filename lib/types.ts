@@ -541,6 +541,8 @@ export interface ChatMessage {
   productionTitle?: string;
   createdAt: string;
   readBy?: string[]; // IDs of users who have read this message
+  isEdited?: boolean;
+  editedAt?: string;
 }
 
 // Gett Taxi Dispatch Interfaces

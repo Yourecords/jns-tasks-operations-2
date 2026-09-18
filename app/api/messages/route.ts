@@ -141,14 +141,51 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { channelType } = body;
+    const { messageId, content, channelType } = body;
     const targetOtherUserId = body.recipientId || body.senderId || body.otherUserId;
 
     const db = await getDbAsync();
     if (!db.chatMessages) {
-      return NextResponse.json({ success: true });
+      db.chatMessages = [];
     }
 
+    // CASE 1: EDIT MESSAGE
+    if (messageId && content !== undefined) {
+      if (!content || typeof content !== 'string' || content.trim().length === 0) {
+        return NextResponse.json({ error: 'Message content cannot be empty' }, { status: 400 });
+      }
+
+      const targetMsg = db.chatMessages.find((m) => m.id === messageId);
+      if (!targetMsg) {
+        return NextResponse.json({ error: 'Message not found' }, { status: 404 });
+      }
+
+      // Must be original sender
+      if (targetMsg.senderId !== user.id) {
+        return NextResponse.json({ error: 'You can only edit your own messages' }, { status: 403 });
+      }
+
+      // Check 1 hour (3,600,000 ms) window
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      const sentTime = new Date(targetMsg.createdAt).getTime();
+      const elapsed = Date.now() - sentTime;
+
+      if (elapsed > ONE_HOUR_MS) {
+        return NextResponse.json(
+          { error: 'Messages can only be edited within 1 hour after being sent.' },
+          { status: 403 }
+        );
+      }
+
+      targetMsg.content = content.trim();
+      targetMsg.isEdited = true;
+      targetMsg.editedAt = new Date().toISOString();
+
+      await saveDbAsync(db);
+      return NextResponse.json({ success: true, message: targetMsg });
+    }
+
+    // CASE 2: MARK CONVERSATION AS READ
     let updated = false;
 
     db.chatMessages.forEach((m) => {
@@ -179,6 +216,6 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to update read status' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Failed to process update' }, { status: 500 });
   }
 }

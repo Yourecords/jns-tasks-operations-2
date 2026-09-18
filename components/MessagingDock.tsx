@@ -15,6 +15,9 @@ import {
   Film,
   Sparkles,
   ExternalLink,
+  Pencil,
+  Check,
+  Clock,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { ChatMessage, Production } from '@/lib/types';
@@ -37,6 +40,12 @@ export default function MessagingDock() {
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [dmSearch, setDmSearch] = useState('');
+
+  // Editing Message States (1-Hour Edit Window)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInputText, setEditInputText] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // Production Attachment Modal
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -171,6 +180,66 @@ export default function MessagingDock() {
     } finally {
       setSending(false);
       setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  };
+
+  // 1-Hour Time Window for Message Editing
+  const isEditable = (createdAt: string) => {
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const elapsed = Date.now() - new Date(createdAt).getTime();
+    return elapsed >= 0 && elapsed <= ONE_HOUR_MS;
+  };
+
+  const handleStartEdit = (msg: ChatMessage) => {
+    if (!isEditable(msg.createdAt)) return;
+    setEditingMessageId(msg.id);
+    setEditInputText(msg.content);
+    setEditError('');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditInputText('');
+    setEditError('');
+  };
+
+  const handleSaveEdit = async (messageId: string) => {
+    if (!editInputText.trim()) {
+      setEditError('Message cannot be empty');
+      return;
+    }
+    setEditLoading(true);
+    setEditError('');
+
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId,
+          content: editInputText.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || 'Failed to edit message');
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, content: editInputText.trim(), isEdited: true, editedAt: new Date().toISOString() }
+            : m
+        )
+      );
+      setEditingMessageId(null);
+      setEditInputText('');
+    } catch {
+      setEditError('Network error while saving edit');
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -674,43 +743,169 @@ export default function MessagingDock() {
                               wordBreak: 'break-word',
                             }}
                           >
-                            <div>{msg.content}</div>
-
-                            {/* Attached Production Reference */}
-                            {msg.productionId && (
-                              <div
-                                style={{
-                                  marginTop: '6px',
-                                  paddingTop: '6px',
-                                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                                }}
-                              >
-                                <Link
-                                  href={`/productions/${msg.productionId}`}
+                            {isMe && editingMessageId === msg.id ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <textarea
+                                  value={editInputText}
+                                  onChange={(e) => setEditInputText(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      handleSaveEdit(msg.id);
+                                    } else if (e.key === 'Escape') {
+                                      handleCancelEdit();
+                                    }
+                                  }}
+                                  autoFocus
+                                  rows={2}
+                                  placeholder="Edit your message..."
                                   style={{
-                                    display: 'inline-flex',
+                                    width: '100%',
+                                    background: 'rgba(15, 23, 42, 0.9)',
+                                    border: '1px solid var(--jns-gold)',
+                                    borderRadius: '6px',
+                                    color: '#fff',
+                                    padding: '6px 8px',
+                                    fontSize: '12px',
+                                    resize: 'none',
+                                    outline: 'none',
+                                  }}
+                                />
+                                {editError && (
+                                  <div style={{ color: '#fca5a5', fontSize: '10.5px' }}>{editError}</div>
+                                )}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEdit}
+                                    disabled={editLoading}
+                                    style={{
+                                      background: 'transparent',
+                                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                                      color: 'var(--text-secondary)',
+                                      borderRadius: '4px',
+                                      padding: '2px 8px',
+                                      fontSize: '10.5px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEdit(msg.id)}
+                                    disabled={editLoading || !editInputText.trim()}
+                                    style={{
+                                      background: 'var(--jns-gold)',
+                                      border: 'none',
+                                      color: '#000',
+                                      fontWeight: 800,
+                                      borderRadius: '4px',
+                                      padding: '2px 8px',
+                                      fontSize: '10.5px',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                    }}
+                                  >
+                                    <Check size={11} />
+                                    <span>{editLoading ? 'Saving...' : 'Save'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div>{msg.content}</div>
+
+                                {/* Attached Production Reference */}
+                                {msg.productionId && (
+                                  <div
+                                    style={{
+                                      marginTop: '6px',
+                                      paddingTop: '6px',
+                                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                    }}
+                                  >
+                                    <Link
+                                      href={`/productions/${msg.productionId}`}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                        fontSize: '11px',
+                                        color: 'var(--jns-gold)',
+                                        fontWeight: 700,
+                                        textDecoration: 'none',
+                                        background: 'rgba(0, 0, 0, 0.25)',
+                                        padding: '3px 7px',
+                                        borderRadius: '5px',
+                                      }}
+                                    >
+                                      <Film size={11} />
+                                      <span>{msg.productionTitle || 'Linked Production'}</span>
+                                      <ExternalLink size={10} />
+                                    </Link>
+                                  </div>
+                                )}
+
+                                {/* Timestamp, Edited tag & Edit button for author within 1 hour */}
+                                <div
+                                  style={{
+                                    display: 'flex',
                                     alignItems: 'center',
-                                    gap: '5px',
-                                    fontSize: '11px',
-                                    color: 'var(--jns-gold)',
-                                    fontWeight: 700,
-                                    textDecoration: 'none',
-                                    background: 'rgba(0, 0, 0, 0.25)',
-                                    padding: '3px 7px',
-                                    borderRadius: '5px',
+                                    justifyContent: isMe ? 'flex-end' : 'flex-start',
+                                    gap: '6px',
+                                    marginTop: '4px',
                                   }}
                                 >
-                                  <Film size={11} />
-                                  <span>{msg.productionTitle || 'Linked Production'}</span>
-                                  <ExternalLink size={10} />
-                                </Link>
-                              </div>
-                            )}
-
-                            {isMe && (
-                              <div style={{ textAlign: 'right', fontSize: '9px', color: 'rgba(254, 240, 138, 0.6)', marginTop: '3px' }}>
-                                {msgTime}
-                              </div>
+                                  {msg.isEdited && (
+                                    <span
+                                      style={{
+                                        fontSize: '9px',
+                                        fontStyle: 'italic',
+                                        color: isMe ? 'rgba(254, 240, 138, 0.6)' : 'var(--text-muted)',
+                                      }}
+                                      title={msg.editedAt ? `Edited at ${new Date(msg.editedAt).toLocaleTimeString()}` : 'Edited'}
+                                    >
+                                      (edited)
+                                    </span>
+                                  )}
+                                  <span
+                                    style={{
+                                      fontSize: '9px',
+                                      color: isMe ? 'rgba(254, 240, 138, 0.6)' : 'var(--text-secondary)',
+                                    }}
+                                  >
+                                    {msgTime}
+                                  </span>
+                                  {isMe && isEditable(msg.createdAt) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEdit(msg)}
+                                      title="Edit message (allowed within 1 hour of sending)"
+                                      style={{
+                                        background: 'rgba(212, 160, 23, 0.15)',
+                                        border: '1px solid rgba(212, 160, 23, 0.3)',
+                                        color: '#fef08a',
+                                        cursor: 'pointer',
+                                        padding: '1px 5px',
+                                        borderRadius: '3px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '9.5px',
+                                        fontWeight: 700,
+                                        marginLeft: '4px',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      <Pencil size={9} />
+                                      <span>Edit</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </>
                             )}
                           </div>
                         </div>
