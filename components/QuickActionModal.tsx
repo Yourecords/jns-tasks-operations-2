@@ -208,11 +208,53 @@ export default function QuickActionModal({
     return findStudioConflict(existingProductions, rentalDate, rentalTime, 'STUDIO');
   }, [existingProductions, rentalDate, rentalTime]);
 
+  // Next episode number auto-calculation based on existing productions for the selected show
+  const suggestedNextEp = React.useMemo(() => {
+    if (!epShowId) return '';
+    const cleanId = epShowId.replace(/^show_/, '');
+    const showProds = existingProductions.filter(
+      (p) => (p.showId === epShowId || (p.type === 'EPISODE' && p.id?.includes(cleanId))) && p.status !== 'ARCHIVED'
+    );
+    let maxNum = 0;
+    showProds.forEach((p) => {
+      const match = String(p.episodeNumber || '').match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    return maxNum > 0 ? String(maxNum + 1) : '1';
+  }, [epShowId, existingProductions]);
+
+  // When show changes and user has not typed or when epNumber is empty, auto-set to suggested next
+  useEffect(() => {
+    if (suggestedNextEp && !epNumber) {
+      setEpNumber(suggestedNextEp);
+    }
+  }, [epShowId, suggestedNextEp]);
+
+  // Real-time duplicate episode number check
+  const epNumberDuplicate = React.useMemo(() => {
+    if (!epShowId || !epNumber.trim()) return false;
+    const cleanNum = epNumber.trim().toLowerCase();
+    const cleanShow = epShowId.replace(/^show_/, '');
+    return existingProductions.some(
+      (p) =>
+        (p.showId === epShowId || (p.type === 'EPISODE' && p.id?.includes(`_${cleanShow}_`))) &&
+        String(p.episodeNumber || '').trim().toLowerCase() === cleanNum &&
+        p.status !== 'ARCHIVED'
+    );
+  }, [epShowId, epNumber, existingProductions]);
+
   if (!isOpen) return null;
 
   const handleCreateEpisode = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    if (epNumberDuplicate) {
+      setErrorMsg(`Episode ${epNumber} already exists for this show. Please select episode ${suggestedNextEp} or another available number.`);
+      return;
+    }
     if (epConflict.hasConflict) {
       setErrorMsg(epConflict.reason || 'Studio conflict detected');
       return;
@@ -662,7 +704,10 @@ export default function QuickActionModal({
                   <select
                     className="form-select"
                     value={epShowId}
-                    onChange={(e) => setEpShowId(e.target.value)}
+                    onChange={(e) => {
+                      setEpShowId(e.target.value);
+                      setEpNumber('');
+                    }}
                     required
                   >
                     {shows.map((s) => (
@@ -680,11 +725,23 @@ export default function QuickActionModal({
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. 135"
+                    placeholder={`e.g. ${suggestedNextEp || '1'}`}
                     value={epNumber}
                     onChange={(e) => setEpNumber(e.target.value)}
                     required
+                    style={{
+                      borderColor: epNumberDuplicate ? 'var(--danger-color, #ef4444)' : undefined,
+                    }}
                   />
+                  {epNumberDuplicate ? (
+                    <div style={{ fontSize: '11.5px', color: 'var(--danger-color, #ef4444)', marginTop: '4px', fontWeight: 600 }}>
+                      ⚠️ Episode {epNumber} already exists for this show (Suggested next: {suggestedNextEp})
+                    </div>
+                  ) : suggestedNextEp ? (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                      Suggested next: <strong>Episode {suggestedNextEp}</strong>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

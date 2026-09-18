@@ -388,9 +388,29 @@ export async function insertProductionWithLock(newProd: Production): Promise<Pro
   }
 
   return withTransaction(async (client) => {
+    // Prevent duplicate primary key collisions
+    const checkRes = await client.query('SELECT id FROM productions WHERE id = $1', [newProd.id]);
+    if (checkRes.rows.length > 0) {
+      newProd.id = `${newProd.id}_${Date.now().toString(36)}`;
+      if (Array.isArray(newProd.tasks)) {
+        newProd.tasks.forEach((t) => {
+          t.productionId = newProd.id;
+        });
+      }
+    }
+
     await client.query(
       `INSERT INTO productions (id, show_id, episode_number, title, type, status, current_stage, data, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         show_id = EXCLUDED.show_id,
+         episode_number = EXCLUDED.episode_number,
+         title = EXCLUDED.title,
+         type = EXCLUDED.type,
+         status = EXCLUDED.status,
+         current_stage = EXCLUDED.current_stage,
+         data = EXCLUDED.data,
+         updated_at = NOW()`,
       [
         newProd.id,
         newProd.showId || null,

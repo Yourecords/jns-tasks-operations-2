@@ -169,8 +169,26 @@ export async function createNewEpisode(
     }
   }
 
-  const prodId = `prod_${data.showId.replace('show_', '')}_${data.episodeNumber}`;
-  const title = `${show.name} — Episode ${data.episodeNumber}`;
+  const cleanEpNum = String(data.episodeNumber || '').trim();
+  if (!cleanEpNum) {
+    throw new Error('Episode number is required.');
+  }
+
+  const existingEp = db.productions.find(
+    (p) =>
+      p.showId === data.showId &&
+      String(p.episodeNumber || '').trim() === cleanEpNum &&
+      p.status !== 'ARCHIVED'
+  );
+  if (existingEp) {
+    throw new Error(`Episode ${cleanEpNum} already exists for "${show.name}". Please enter a different episode number.`);
+  }
+
+  let prodId = `prod_${data.showId.replace(/^show_/, '')}_${cleanEpNum}`;
+  if (db.productions.some((p) => p.id === prodId)) {
+    prodId = `${prodId}_${Date.now().toString(36)}`;
+  }
+  const title = `${show.name} — Episode ${cleanEpNum}`;
 
   const assignedProducer = data.producerId || show.producerId;
   const assignedEditor = data.editorId || show.defaultEditorId;
