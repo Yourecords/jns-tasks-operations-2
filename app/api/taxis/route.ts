@@ -4,6 +4,7 @@ import { getDbAsync } from '@/lib/db';
 import {
   createTaxiOrder,
   estimateTaxiPrice,
+  canManageTaxis,
   JNS_STUDIO_ADDRESS,
   CreateTaxiOrderParams,
 } from '@/lib/gett';
@@ -48,6 +49,13 @@ export async function POST(req: NextRequest) {
   const user = await getAuthenticatedUser(req);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
+  if (!canManageTaxis(user)) {
+    return NextResponse.json(
+      { error: 'Forbidden: Taxi ordering is restricted to Administrators, Producers, and Studio Operators' },
+      { status: 403 }
+    );
   }
 
   try {

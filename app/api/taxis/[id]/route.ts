@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getDbAsync, saveDbAsync } from '@/lib/db';
-import { cancelTaxiOrder, updateTaxiStatus } from '@/lib/gett';
+import { cancelTaxiOrder, updateTaxiStatus, canManageTaxis } from '@/lib/gett';
 
 type RouteContext = { params: Promise<{ id: string }> | { id: string } };
 
@@ -26,6 +26,13 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   const user = await getAuthenticatedUser(req);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+  }
+
+  if (!canManageTaxis(user)) {
+    return NextResponse.json(
+      { error: 'Forbidden: Taxi management is restricted to Administrators, Producers, and Studio Operators' },
+      { status: 403 }
+    );
   }
 
   const { id } = await Promise.resolve(context.params);

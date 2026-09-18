@@ -1257,9 +1257,48 @@ try {
   console.error('✗ Test 23 Failed', err);
 }
 
-// Test 24: Gett Taxi Dispatch Module: Immediate dispatch, estimation, status progression & cancellation
+// Test 24: Gett Taxi Dispatch Module: Role permissions, immediate dispatch, estimation, status progression & cancellation
 try {
-  // 1. Dispatch an immediate taxi for a guest via POST /api/taxis
+  // 0. Permission Check: Editor is forbidden from ordering or managing taxis
+  const editorOrderReq = new NextRequest('http://localhost:3000/api/taxis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({
+      passengerName: 'Unauthorized Guest',
+      passengerPhone: '+972-50-0000000',
+      pickupAddress: 'King David Hotel, King David St 23, Jerusalem',
+      dropoffAddress: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem',
+      direction: 'TO_STUDIO',
+    }),
+  });
+  const editorOrderRes = await postTaxis(editorOrderReq);
+  assert.strictEqual(editorOrderRes.status, 403, 'Editor must receive 403 Forbidden when attempting to order taxi');
+  const editorOrderData = await editorOrderRes.json();
+  assert(editorOrderData.error.includes('restricted to Administrators, Producers, and Studio Operators'));
+
+  // Studio Operator is permitted to order taxis
+  const studioOrderReq = new NextRequest('http://localhost:3000/api/taxis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${studioUser.id}`,
+    },
+    body: JSON.stringify({
+      passengerName: 'Ahron Test Host',
+      passengerPhone: '+972-54-3334455',
+      pickupAddress: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem',
+      dropoffAddress: 'Mamilla Hotel, King Solomon St 11, Jerusalem',
+      direction: 'FROM_STUDIO',
+      isImmediate: true,
+    }),
+  });
+  const studioOrderRes = await postTaxis(studioOrderReq);
+  assert.strictEqual(studioOrderRes.status, 201, 'Studio Operator must be permitted to dispatch taxis (201)');
+
+  // 1. Dispatch an immediate taxi for a guest via POST /api/taxis (by Producer)
   const orderReq = new NextRequest('http://localhost:3000/api/taxis', {
     method: 'POST',
     headers: {

@@ -4,6 +4,22 @@ import { logAudit } from './workflow';
 
 export const JNS_STUDIO_ADDRESS = 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem';
 
+/**
+ * Role permissions check for taxi ordering.
+ * Only Admin, Studio Operator, and Producers can order or manage taxis.
+ */
+export function canManageTaxis(user?: { role?: string; jobFunction?: string; id?: string } | null): boolean {
+  if (!user) return false;
+  return (
+    user.role === 'ADMIN' ||
+    user.role === 'PRODUCER' ||
+    user.jobFunction === 'STUDIO_OPERATOR' ||
+    user.id === 'usr_ahron_studio' ||
+    user.id === 'usr_yuri_admin' ||
+    user.id === 'usr_zach_producer'
+  );
+}
+
 export interface CreateTaxiOrderParams {
   productionId?: string;
   productionTitle?: string;
@@ -91,6 +107,9 @@ export async function createTaxiOrder(
   params: CreateTaxiOrderParams,
   user: User
 ): Promise<TaxiRide> {
+  if (!canManageTaxis(user)) {
+    throw new Error('Forbidden: Only Administrators, Producers, and Studio Operators can order taxis.');
+  }
   if (!params.passengerName || !params.passengerName.trim()) {
     throw new Error('Passenger name is required.');
   }
@@ -178,6 +197,9 @@ export async function createTaxiOrder(
  * Cancels an active or scheduled Gett taxi order.
  */
 export async function cancelTaxiOrder(rideId: string, user: User, reason?: string): Promise<TaxiRide> {
+  if (!canManageTaxis(user)) {
+    throw new Error('Forbidden: Only Administrators, Producers, and Studio Operators can cancel taxi bookings.');
+  }
   const db = await getDbAsync();
   const ride = db.taxiRides?.find((r) => r.id === rideId);
   if (!ride) {

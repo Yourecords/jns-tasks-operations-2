@@ -35,6 +35,7 @@ import {
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
 import { isEligibleEditor } from '@/lib/utils';
+import { canManageTaxis } from '@/lib/gett';
 import UpdateScheduleModal from './UpdateScheduleModal';
 
 interface SidebarProps {
@@ -138,13 +139,17 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     { label: 'Pilots', href: '/pilots', icon: Compass },
     { label: 'Studio Rentals', href: '/rentals', icon: Building2 },
     { label: 'Production Calendar', href: '/calendar', icon: Calendar },
-    {
-      label: 'Guest Taxis (Gett)',
-      href: '/taxis',
-      icon: Car,
-      badge: badgeCounts.activeTaxis > 0 ? badgeCounts.activeTaxis : undefined,
-      badgeClass: 'nav-badge-blue',
-    },
+    ...(canManageTaxis(currentUser)
+      ? [
+          {
+            label: 'Guest Taxis (Gett)',
+            href: '/taxis',
+            icon: Car,
+            badge: badgeCounts.activeTaxis > 0 ? badgeCounts.activeTaxis : undefined,
+            badgeClass: 'nav-badge-blue',
+          },
+        ]
+      : []),
     {
       label: 'My Tasks',
       href: '/my-tasks',

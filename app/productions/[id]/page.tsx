@@ -32,6 +32,7 @@ import {
 import { useUser } from '@/components/UserContext';
 import { Production, ProductionTask, Comment, AuditLog, RevisionCycle } from '@/lib/types';
 import { isEligibleEditor } from '@/lib/utils';
+import { canManageTaxis } from '@/lib/gett';
 import WorkflowBreadcrumb from '@/components/WorkflowBreadcrumb';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
@@ -375,22 +376,24 @@ export default function ProductionDetailPage() {
               variant="solid"
               buttonLabel="Share on WhatsApp"
             />
-            <Link
-              href={`/taxis?productionId=${production.id}`}
-              className="btn btn-secondary btn-sm"
-              title="Order or view Gett taxis for this episode's guests"
-              style={{
-                borderColor: 'rgba(59, 130, 246, 0.4)',
-                color: '#60a5fa',
-                backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <Car size={13} />
-              <span>Guest Taxi (Gett)</span>
-            </Link>
+            {canManageTaxis(currentUser) && (
+              <Link
+                href={`/taxis?productionId=${production.id}`}
+                className="btn btn-secondary btn-sm"
+                title="Order or view Gett taxis for this episode's guests"
+                style={{
+                  borderColor: 'rgba(59, 130, 246, 0.4)',
+                  color: '#60a5fa',
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Car size={13} />
+                <span>Guest Taxi (Gett)</span>
+              </Link>
+            )}
             {isProducerOrAdmin && (
               <button
                 type="button"

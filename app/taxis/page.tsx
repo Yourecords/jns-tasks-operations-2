@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { TaxiRide, TaxiStatus, TaxiVehicleType, TaxiDirection, TaxiPassengerRole } from '@/lib/types';
 import { useUser } from '@/components/UserContext';
+import { canManageTaxis } from '@/lib/gett';
 
 const PRESET_ADDRESSES = [
   { name: 'JNS Jerusalem Studio', address: 'JNS Jerusalem Studio, King George St / Jaffa St, Jerusalem' },
@@ -369,6 +370,25 @@ export default function TaxisPage() {
         return null;
     }
   };
+
+  if (currentUser && !canManageTaxis(currentUser)) {
+    return (
+      <div className="calendar-page-container" style={{ minHeight: '100vh', background: 'var(--bg-main, #0f172a)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+        <div style={{ maxWidth: '480px', textAlign: 'center', padding: '36px', borderRadius: '16px', background: 'rgba(30, 41, 59, 0.8)', border: '1px solid #334155', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
+            <Shield size={32} color="#f59e0b" />
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#f8fafc', marginBottom: '8px' }}>Access Restricted</h2>
+          <p style={{ fontSize: '13px', color: '#94a3b8', lineHeight: 1.6, marginBottom: '24px' }}>
+            Guest taxi dispatching and transit logistics are reserved for Administrators, Producers, and Studio Operators. If your shoot requires transit, please coordinate with the assigned show producer.
+          </p>
+          <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px', backgroundColor: '#2563eb', color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '13px' }}>
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="calendar-page-container" style={{ minHeight: '100vh', background: 'var(--bg-main, #0f172a)', color: 'var(--text-main, #f8fafc)', padding: '24px 32px' }}>
