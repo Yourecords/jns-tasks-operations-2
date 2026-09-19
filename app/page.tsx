@@ -19,10 +19,11 @@ import {
   ShieldAlert,
   ArrowUpRight,
   Eye,
-  Pencil
+  Pencil,
+  Palette
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
-import { Production, ProductionTask } from '@/lib/types';
+import { Production, ProductionTask, GraphicDesignTask } from '@/lib/types';
 import { sortProductionsByFilmingSchedule } from '@/lib/utils';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import UpdateScheduleModal from '@/components/UpdateScheduleModal';
@@ -30,6 +31,7 @@ import UpdateScheduleModal from '@/components/UpdateScheduleModal';
 export default function DashboardPage() {
   const { currentUser, allUsers, settings } = useUser();
   const [productions, setProductions] = useState<Production[]>([]);
+  const [graphicTasks, setGraphicTasks] = useState<GraphicDesignTask[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Blocked task modal state
@@ -39,13 +41,22 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const res = await fetch('/api/productions');
-      const data = await res.json();
-      if (data.productions) {
-        setProductions(data.productions);
+      const [prodRes, gfxRes] = await Promise.all([
+        fetch('/api/productions'),
+        fetch('/api/graphics'),
+      ]);
+      const prodData = await prodRes.json();
+      if (prodData.productions) {
+        setProductions(prodData.productions);
+      }
+      if (gfxRes.ok) {
+        const gfxData = await gfxRes.json();
+        if (gfxData.tasks) {
+          setGraphicTasks(gfxData.tasks);
+        }
       }
     } catch (err) {
-      console.error('Error fetching dashboard productions', err);
+      console.error('Error fetching dashboard productions and graphics', err);
     } finally {
       setLoading(false);
     }
@@ -129,6 +140,14 @@ export default function DashboardPage() {
   // Arrange filming shoots by date, then by hour of filming (earliest hour of filming on top)
   const upcomingFilming = sortProductionsByFilmingSchedule(upcomingFilmingRaw);
 
+  // Active & Overdue Graphic Design Tasks representation
+  const activeGraphicTasks = graphicTasks.filter(
+    (t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED'
+  );
+  const activeImmediateCount = activeGraphicTasks.filter((t) => t.type === 'IMMEDIATE').length;
+  const activeLongTermCount = activeGraphicTasks.filter((t) => t.type === 'LONG_TERM').length;
+  const overdueGraphicTasks = activeGraphicTasks.filter((t) => t.deadline && t.deadline < todayStr);
+
   // Fast 1-click status updater for task
   const handleQuickStatusChange = async (taskId: string, newStatus: string, taskTitle: string) => {
     if (newStatus === 'BLOCKED') {
@@ -188,10 +207,12 @@ export default function DashboardPage() {
             <span className="metric-title">Overdue Tasks</span>
             <AlertTriangle size={16} color="#ef4444" />
           </div>
-          <div className="metric-value" style={{ color: overdueTasks.length > 0 ? '#ef4444' : 'var(--text-main)' }}>
-            {overdueTasks.length}
+          <div className="metric-value" style={{ color: (overdueTasks.length + overdueGraphicTasks.length) > 0 ? '#ef4444' : 'var(--text-main)' }}>
+            {overdueTasks.length + overdueGraphicTasks.length}
           </div>
-          <div className="metric-subtitle">{overdueTasks.length > 0 ? 'Requires immediate resolution' : 'All deadlines on track'}</div>
+          <div className="metric-subtitle">
+            {(overdueTasks.length + overdueGraphicTasks.length) > 0 ? 'Requires immediate resolution' : 'All deadlines on track'}
+          </div>
         </div>
 
         <div className="metric-card" style={{ borderLeft: '4px solid #be185d' }}>
@@ -213,15 +234,32 @@ export default function DashboardPage() {
           <div className="metric-value">{waitingApprovalProds.length}</div>
           <div className="metric-subtitle">Producer reviews / Final signs</div>
         </div>
+
+        <Link href="/graphics" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="metric-card" style={{ borderLeft: '4px solid #a855f7', height: '100%', cursor: 'pointer', transition: 'transform 0.15s ease' }}>
+            <div className="metric-header">
+              <span className="metric-title">Graphics Ops</span>
+              <Palette size={16} color="#c084fc" />
+            </div>
+            <div className="metric-value" style={{ color: activeGraphicTasks.length > 0 ? '#c084fc' : 'var(--text-main)' }}>
+              {activeGraphicTasks.length}
+            </div>
+            <div className="metric-subtitle">
+              {activeGraphicTasks.length > 0
+                ? `${activeImmediateCount} immediate • ${activeLongTermCount} long-term`
+                : 'All graphics on track'}
+            </div>
+          </div>
+        </Link>
       </div>
 
-      {/* Overdue Warning Callout (if any) */}
-      {overdueTasks.length > 0 && (
+      {/* Overdue Warning Callout (if any, including Graphic tasks) */}
+      {(overdueTasks.length > 0 || overdueGraphicTasks.length > 0) && (
         <div className="alert-banner alert-banner-danger">
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
           <div style={{ flex: 1 }}>
             <strong className="alert-banner-title" style={{ display: 'block', marginBottom: '2px' }}>
-              Attention: {overdueTasks.length} Overdue Task{overdueTasks.length > 1 ? 's' : ''} Detected
+              Attention: {overdueTasks.length + overdueGraphicTasks.length} Overdue Task{overdueTasks.length + overdueGraphicTasks.length > 1 ? 's' : ''} Detected
             </strong>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.4rem' }}>
               {overdueTasks.map(({ task, production }) => (
@@ -231,6 +269,16 @@ export default function DashboardPage() {
                   </span>
                   <Link href={`/productions/${production.id}`} className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.5rem', fontSize: '11px', flexShrink: 0 }}>
                     Open Production →
+                  </Link>
+                </div>
+              ))}
+              {overdueGraphicTasks.map((gt) => (
+                <div key={gt.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', fontSize: '12px' }}>
+                  <span>
+                    • <strong style={{ color: '#c084fc' }}>[Graphics]</strong> <strong>{gt.title || gt.projectName}</strong>: Due {gt.deadline} (Assigned to {getUserName(gt.assignedUserId)})
+                  </span>
+                  <Link href="/graphics" className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.5rem', fontSize: '11px', flexShrink: 0 }}>
+                    Open Graphics Hub →
                   </Link>
                 </div>
               ))}
@@ -534,6 +582,176 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* SECTION: GRAPHIC DESIGN OPERATIONS (Compact Representation) */}
+      <div className="section-panel" style={{ marginBottom: '1.5rem' }}>
+        <div className="section-panel-header">
+          <div className="section-panel-title">
+            <Palette size={17} color="#c084fc" />
+            <span>Graphic Design Operations</span>
+            <span
+              className="status-chip status-in-progress"
+              style={{
+                marginLeft: '0.5rem',
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#c084fc',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+              }}
+            >
+              {activeGraphicTasks.length} Active
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <Link
+              href="/graphics"
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px' }}
+            >
+              <span>Graphics Hub ({graphicTasks.length})</span>
+              <ExternalLink size={12} />
+            </Link>
+          </div>
+        </div>
+
+        <div className="section-panel-body" style={{ padding: '0.85rem' }}>
+          {activeGraphicTasks.length === 0 ? (
+            <div style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12.5px' }}>
+              No active graphic tasks in flight • All immediate requests and project deliverables are up to date.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 310px), 1fr))',
+                gap: '0.75rem',
+              }}
+            >
+              {activeGraphicTasks.slice(0, 6).map((gt) => {
+                const isAssignedToMe = currentUser && gt.assignedUserId === currentUser.id;
+                const completedSubtasks = (gt.subtasks || []).filter((s) => s.status === 'DONE').length;
+                const totalSubtasks = (gt.subtasks || []).length;
+
+                return (
+                  <div
+                    key={gt.id}
+                    style={{
+                      padding: '10px 12px',
+                      backgroundColor: 'var(--bg-card-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      border: isAssignedToMe ? '1px solid var(--jns-gold)' : '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '6px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                        <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-main)', lineHeight: 1.3 }}>
+                          {gt.title || gt.projectName}
+                        </div>
+                        <span
+                          className={`badge ${gt.type === 'LONG_TERM' ? 'badge-gold' : 'badge-blue'}`}
+                          style={{ fontSize: '9.5px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                        >
+                          {gt.type === 'LONG_TERM' ? 'PROJECT' : 'REQUEST'}
+                        </span>
+                      </div>
+
+                      {/* Associated Show / Production */}
+                      {(gt.showName || gt.productionTitle) && (
+                        <div style={{ fontSize: '11px', color: '#38bdf8', marginTop: '2px', fontWeight: 600 }}>
+                          {gt.showName && <span>Show: {gt.showName}</span>}
+                          {gt.showName && gt.productionTitle && <span> • </span>}
+                          {gt.productionTitle && <span>{gt.productionTitle}</span>}
+                        </div>
+                      )}
+
+                      {/* Description preview if present */}
+                      {gt.description && (
+                        <div
+                          style={{
+                            fontSize: '11.5px',
+                            color: 'var(--text-secondary)',
+                            marginTop: '2px',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {gt.description}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '6px', marginTop: '2px' }}>
+                      {/* Subtasks or Timing progress */}
+                      {gt.type === 'LONG_TERM' && totalSubtasks > 0 && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          Stages: <strong style={{ color: 'var(--jns-gold)' }}>{completedSubtasks} / {totalSubtasks}</strong> done
+                        </div>
+                      )}
+
+                      {gt.timing && (
+                        <div style={{ fontSize: '11px', color: '#eab308', marginBottom: '4px', fontWeight: 600 }}>
+                          ⏱ Timing: {gt.timing}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px', fontSize: '11px' }}>
+                        <div style={{ color: 'var(--text-muted)' }}>
+                          <span>Artist: </span>
+                          <strong style={{ color: isAssignedToMe ? 'var(--jns-gold)' : 'var(--text-main)' }}>
+                            {isAssignedToMe ? 'You' : getUserName(gt.assignedUserId)}
+                          </strong>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            className={`status-chip ${
+                              gt.status === 'IN_PROGRESS'
+                                ? 'status-in-progress'
+                                : gt.status === 'READY_FOR_REVIEW'
+                                ? 'status-waiting'
+                                : gt.status === 'REVISION_REQUIRED'
+                                ? 'status-revision'
+                                : 'status-not-started'
+                            }`}
+                            style={{ fontSize: '9.5px', padding: '1px 6px' }}
+                          >
+                            {gt.status.replace(/_/g, ' ')}
+                          </span>
+
+                          <Link
+                            href="/graphics"
+                            style={{
+                              color: 'var(--jns-gold)',
+                              fontWeight: 700,
+                              fontSize: '11px',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            View →
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {activeGraphicTasks.length > 6 && (
+            <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
+              <Link href="/graphics" className="btn btn-secondary btn-sm" style={{ fontSize: '11.5px' }}>
+                View All {activeGraphicTasks.length} Active Graphics Tasks in Hub →
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
