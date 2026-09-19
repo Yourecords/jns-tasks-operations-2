@@ -20,10 +20,13 @@ import {
   Clock,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
+import { useTheme } from '@/components/ThemeContext';
 import { ChatMessage, Production } from '@/lib/types';
 
 export default function MessagingDock() {
   const { currentUser, allUsers } = useUser();
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
 
   // Dock States
   const [isOpen, setIsOpen] = useState(false);
@@ -284,10 +287,12 @@ export default function MessagingDock() {
             gap: '8px',
             padding: '10px 18px',
             borderRadius: '30px',
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            background: isLight ? '#ffffff' : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
             border: '1.5px solid var(--jns-gold)',
             color: 'var(--text-main)',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 160, 23, 0.25)',
+            boxShadow: isLight
+              ? '0 6px 20px rgba(0, 0, 0, 0.12), 0 0 10px rgba(201, 138, 36, 0.2)'
+              : '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 160, 23, 0.25)',
             cursor: 'pointer',
             transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
             fontSize: '13px',
@@ -306,7 +311,7 @@ export default function MessagingDock() {
                 height: '7px',
                 borderRadius: '50%',
                 background: '#22c55e',
-                border: '1px solid #0f172a',
+                border: isLight ? '1px solid #ffffff' : '1px solid #0f172a',
               }}
             />
           </div>
@@ -339,10 +344,12 @@ export default function MessagingDock() {
             height: '520px',
             maxHeight: '82vh',
             borderRadius: '14px',
-            background: 'rgba(15, 23, 42, 0.96)',
+            background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.96)',
             backdropFilter: 'blur(16px)',
-            border: '1px solid rgba(212, 160, 23, 0.35)',
-            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65), 0 0 20px rgba(212, 160, 23, 0.15)',
+            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(212, 160, 23, 0.35)',
+            boxShadow: isLight
+              ? '0 16px 40px rgba(0, 0, 0, 0.15), 0 0 20px rgba(201, 138, 36, 0.12)'
+              : '0 16px 40px rgba(0, 0, 0, 0.65), 0 0 20px rgba(212, 160, 23, 0.15)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -353,8 +360,10 @@ export default function MessagingDock() {
           <div
             style={{
               padding: '10px 14px',
-              background: 'linear-gradient(90deg, #1e293b 0%, #0f172a 100%)',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              background: isLight
+                ? 'linear-gradient(90deg, #f8fafc 0%, #ffffff 100%)'
+                : 'linear-gradient(90deg, #1e293b 0%, #0f172a 100%)',
+              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -417,9 +426,9 @@ export default function MessagingDock() {
           <div
             style={{
               display: 'flex',
-              background: 'rgba(15, 23, 42, 0.6)',
+              background: isLight ? '#f1f5f9' : 'rgba(15, 23, 42, 0.6)',
               padding: '4px 8px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)',
               gap: '6px',
             }}
           >
@@ -432,9 +441,12 @@ export default function MessagingDock() {
                 flex: 1,
                 padding: '6px 8px',
                 borderRadius: '6px',
-                border: 'none',
-                background: activeTab === 'TEAM' ? 'rgba(212, 160, 23, 0.18)' : 'transparent',
+                border: isLight ? (activeTab === 'TEAM' ? '1px solid #e2e8f0' : '1px solid transparent') : 'none',
+                background: activeTab === 'TEAM'
+                  ? (isLight ? '#ffffff' : 'rgba(212, 160, 23, 0.18)')
+                  : 'transparent',
                 color: activeTab === 'TEAM' ? 'var(--jns-gold)' : 'var(--text-secondary)',
+                boxShadow: activeTab === 'TEAM' && isLight ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 fontWeight: activeTab === 'TEAM' ? 800 : 600,
                 fontSize: '11.5px',
                 cursor: 'pointer',
@@ -472,9 +484,12 @@ export default function MessagingDock() {
                 flex: 1,
                 padding: '6px 8px',
                 borderRadius: '6px',
-                border: 'none',
-                background: activeTab === 'DIRECT' ? 'rgba(212, 160, 23, 0.18)' : 'transparent',
+                border: isLight ? (activeTab === 'DIRECT' ? '1px solid #e2e8f0' : '1px solid transparent') : 'none',
+                background: activeTab === 'DIRECT'
+                  ? (isLight ? '#ffffff' : 'rgba(212, 160, 23, 0.18)')
+                  : 'transparent',
                 color: activeTab === 'DIRECT' ? 'var(--jns-gold)' : 'var(--text-secondary)',
+                boxShadow: activeTab === 'DIRECT' && isLight ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 fontWeight: activeTab === 'DIRECT' ? 800 : 600,
                 fontSize: '11.5px',
                 cursor: 'pointer',
@@ -508,7 +523,7 @@ export default function MessagingDock() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* VIEW 1: DIRECT MESSAGES DIRECTORY (When on DMs and no recipient chosen) */}
             {activeTab === 'DIRECT' && !selectedRecipientId && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '10px' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '10px', background: isLight ? '#f8fafc' : 'transparent' }}>
                 <div style={{ position: 'relative', marginBottom: '8px' }}>
                   <Search
                     size={13}
@@ -523,8 +538,8 @@ export default function MessagingDock() {
                       width: '100%',
                       padding: '6px 10px 6px 30px',
                       borderRadius: '8px',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid var(--border-color, #334155)',
+                      background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.6)',
+                      border: isLight ? '1px solid #cbd5e1' : '1px solid var(--border-color, #334155)',
                       color: 'var(--text-main)',
                       fontSize: '12px',
                       outline: 'none',
@@ -546,8 +561,11 @@ export default function MessagingDock() {
                           justifyContent: 'space-between',
                           padding: '8px 10px',
                           borderRadius: '8px',
-                          border: '1px solid transparent',
-                          background: unread > 0 ? 'rgba(232, 121, 249, 0.1)' : 'rgba(30, 41, 59, 0.4)',
+                          border: isLight ? '1px solid #e2e8f0' : '1px solid transparent',
+                          background: unread > 0
+                            ? (isLight ? '#fdf2f8' : 'rgba(232, 121, 249, 0.1)')
+                            : (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.4)'),
+                          boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.03)' : 'none',
                           cursor: 'pointer',
                           textAlign: 'left',
                           transition: 'all 0.15s ease',
@@ -559,8 +577,10 @@ export default function MessagingDock() {
                               width: '32px',
                               height: '32px',
                               borderRadius: '50%',
-                              background: 'linear-gradient(135deg, #334155 0%, #1e293b 100%)',
-                              border: '1px solid var(--border-color, #475569)',
+                              background: isLight
+                                ? 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)'
+                                : 'linear-gradient(135deg, #334155 0%, #1e293b 100%)',
+                              border: isLight ? '1px solid #cbd5e1' : '1px solid var(--border-color, #475569)',
                               color: 'var(--jns-gold)',
                               display: 'flex',
                               alignItems: 'center',
@@ -609,8 +629,8 @@ export default function MessagingDock() {
                 <div
                   style={{
                     padding: '8px 12px',
-                    background: 'rgba(30, 41, 59, 0.5)',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                    background: isLight ? '#f8fafc' : 'rgba(30, 41, 59, 0.5)',
+                    borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.05)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -646,7 +666,7 @@ export default function MessagingDock() {
                         <ChevronLeft size={14} />
                         <span>All Members</span>
                       </button>
-                      <span style={{ color: 'var(--border-color, #475569)' }}>|</span>
+                      <span style={{ color: isLight ? '#cbd5e1' : 'var(--border-color, #475569)' }}>|</span>
                       <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
                         {selectedRecipient?.fullName || selectedRecipient?.name}
                       </span>
@@ -663,6 +683,7 @@ export default function MessagingDock() {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '10px',
+                    background: isLight ? '#f8fafc' : 'transparent',
                   }}
                 >
                   {messages.length === 0 ? (
@@ -732,12 +753,19 @@ export default function MessagingDock() {
                               padding: '8px 12px',
                               borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                               background: isMe
-                                ? 'linear-gradient(135deg, rgba(212, 160, 23, 0.28) 0%, rgba(30, 41, 59, 0.95) 100%)'
-                                : 'rgba(30, 41, 59, 0.9)',
+                                ? (isLight
+                                    ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
+                                    : 'linear-gradient(135deg, rgba(212, 160, 23, 0.28) 0%, rgba(30, 41, 59, 0.95) 100%)')
+                                : (isLight
+                                    ? '#ffffff'
+                                    : 'rgba(30, 41, 59, 0.9)'),
                               border: isMe
-                                ? '1px solid rgba(212, 160, 23, 0.45)'
-                                : '1px solid rgba(255, 255, 255, 0.08)',
-                              color: isMe ? '#fef08a' : 'var(--text-main)',
+                                ? (isLight ? '1px solid #fcd34d' : '1px solid rgba(212, 160, 23, 0.45)')
+                                : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)'),
+                              boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
+                              color: isMe
+                                ? (isLight ? '#78350f' : '#fef08a')
+                                : 'var(--text-main)',
                               fontSize: '12.5px',
                               lineHeight: 1.4,
                               wordBreak: 'break-word',
@@ -761,10 +789,10 @@ export default function MessagingDock() {
                                   placeholder="Edit your message..."
                                   style={{
                                     width: '100%',
-                                    background: 'rgba(15, 23, 42, 0.9)',
-                                    border: '1px solid var(--jns-gold)',
+                                    background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.9)',
+                                    border: isLight ? '1px solid #d97706' : '1px solid var(--jns-gold)',
                                     borderRadius: '6px',
-                                    color: '#fff',
+                                    color: isLight ? '#0f172a' : '#fff',
                                     padding: '6px 8px',
                                     fontSize: '12px',
                                     resize: 'none',
@@ -772,7 +800,7 @@ export default function MessagingDock() {
                                   }}
                                 />
                                 {editError && (
-                                  <div style={{ color: '#fca5a5', fontSize: '10.5px' }}>{editError}</div>
+                                  <div style={{ color: isLight ? '#dc2626' : '#fca5a5', fontSize: '10.5px' }}>{editError}</div>
                                 )}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
                                   <button
@@ -781,7 +809,7 @@ export default function MessagingDock() {
                                     disabled={editLoading}
                                     style={{
                                       background: 'transparent',
-                                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                                      border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
                                       color: 'var(--text-secondary)',
                                       borderRadius: '4px',
                                       padding: '2px 8px',
@@ -824,7 +852,9 @@ export default function MessagingDock() {
                                     style={{
                                       marginTop: '6px',
                                       paddingTop: '6px',
-                                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                      borderTop: isLight
+                                        ? '1px solid rgba(0, 0, 0, 0.08)'
+                                        : '1px solid rgba(255, 255, 255, 0.1)',
                                     }}
                                   >
                                     <Link
@@ -834,10 +864,11 @@ export default function MessagingDock() {
                                         alignItems: 'center',
                                         gap: '5px',
                                         fontSize: '11px',
-                                        color: 'var(--jns-gold)',
+                                        color: isLight ? '#92400e' : 'var(--jns-gold)',
                                         fontWeight: 700,
                                         textDecoration: 'none',
-                                        background: 'rgba(0, 0, 0, 0.25)',
+                                        background: isLight ? 'rgba(201, 138, 36, 0.12)' : 'rgba(0, 0, 0, 0.25)',
+                                        border: isLight ? '1px solid rgba(201, 138, 36, 0.25)' : 'none',
                                         padding: '3px 7px',
                                         borderRadius: '5px',
                                       }}
@@ -864,7 +895,9 @@ export default function MessagingDock() {
                                       style={{
                                         fontSize: '9px',
                                         fontStyle: 'italic',
-                                        color: isMe ? 'rgba(254, 240, 138, 0.6)' : 'var(--text-muted)',
+                                        color: isMe
+                                          ? (isLight ? 'rgba(120, 53, 15, 0.7)' : 'rgba(254, 240, 138, 0.6)')
+                                          : 'var(--text-muted)',
                                       }}
                                       title={msg.editedAt ? `Edited at ${new Date(msg.editedAt).toLocaleTimeString()}` : 'Edited'}
                                     >
@@ -874,7 +907,9 @@ export default function MessagingDock() {
                                   <span
                                     style={{
                                       fontSize: '9px',
-                                      color: isMe ? 'rgba(254, 240, 138, 0.6)' : 'var(--text-secondary)',
+                                      color: isMe
+                                        ? (isLight ? 'rgba(120, 53, 15, 0.7)' : 'rgba(254, 240, 138, 0.6)')
+                                        : 'var(--text-secondary)',
                                     }}
                                   >
                                     {msgTime}
@@ -885,9 +920,9 @@ export default function MessagingDock() {
                                       onClick={() => handleStartEdit(msg)}
                                       title="Edit message (allowed within 1 hour of sending)"
                                       style={{
-                                        background: 'rgba(212, 160, 23, 0.15)',
-                                        border: '1px solid rgba(212, 160, 23, 0.3)',
-                                        color: '#fef08a',
+                                        background: isLight ? '#fde68a' : 'rgba(212, 160, 23, 0.15)',
+                                        border: isLight ? '1px solid #fcd34d' : '1px solid rgba(212, 160, 23, 0.3)',
+                                        color: isLight ? '#78350f' : '#fef08a',
                                         cursor: 'pointer',
                                         padding: '1px 5px',
                                         borderRadius: '3px',
@@ -920,21 +955,21 @@ export default function MessagingDock() {
                   <div
                     style={{
                       padding: '4px 12px',
-                      background: 'rgba(212, 160, 23, 0.15)',
-                      borderTop: '1px solid rgba(212, 160, 23, 0.3)',
+                      background: isLight ? '#fffbeb' : 'rgba(212, 160, 23, 0.15)',
+                      borderTop: isLight ? '1px solid #fde68a' : '1px solid rgba(212, 160, 23, 0.3)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--jns-gold)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: isLight ? '#92400e' : 'var(--jns-gold)' }}>
                       <Film size={12} />
                       <span>Attaching: <strong>{attachedProd.title}</strong></span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setAttachedProd(null)}
-                      style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: 0 }}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
                     >
                       <X size={12} />
                     </button>
@@ -946,13 +981,14 @@ export default function MessagingDock() {
                   <div
                     style={{
                       padding: '8px',
-                      background: '#1e293b',
-                      borderTop: '1px solid var(--border-color, #334155)',
+                      background: isLight ? '#ffffff' : '#1e293b',
+                      borderTop: isLight ? '1px solid #e2e8f0' : '1px solid var(--border-color, #334155)',
                       maxHeight: '140px',
                       overflowY: 'auto',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '4px',
+                      boxShadow: isLight ? '0 -4px 12px rgba(0, 0, 0, 0.05)' : 'none',
                     }}
                   >
                     <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
@@ -969,8 +1005,8 @@ export default function MessagingDock() {
                         style={{
                           padding: '5px 8px',
                           borderRadius: '5px',
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid transparent',
+                          background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.6)',
+                          border: isLight ? '1px solid #e2e8f0' : '1px solid transparent',
                           color: 'var(--text-main)',
                           fontSize: '11px',
                           textAlign: 'left',
@@ -996,8 +1032,8 @@ export default function MessagingDock() {
                   onSubmit={handleSendMessage}
                   style={{
                     padding: '8px 10px',
-                    background: 'rgba(15, 23, 42, 0.85)',
-                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                    background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.85)',
+                    borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
@@ -1007,7 +1043,9 @@ export default function MessagingDock() {
                     type="button"
                     onClick={() => setShowAttachMenu(!showAttachMenu)}
                     style={{
-                      background: attachedProd ? 'rgba(212, 160, 23, 0.2)' : 'transparent',
+                      background: attachedProd
+                        ? (isLight ? '#fef3c7' : 'rgba(212, 160, 23, 0.2)')
+                        : 'transparent',
                       border: 'none',
                       color: attachedProd ? 'var(--jns-gold)' : 'var(--text-secondary)',
                       cursor: 'pointer',
@@ -1035,8 +1073,8 @@ export default function MessagingDock() {
                       flex: 1,
                       padding: '7px 12px',
                       borderRadius: '20px',
-                      background: 'rgba(30, 41, 59, 0.7)',
-                      border: '1px solid var(--border-color, #475569)',
+                      background: isLight ? '#f1f5f9' : 'rgba(30, 41, 59, 0.7)',
+                      border: isLight ? '1px solid #cbd5e1' : '1px solid var(--border-color, #475569)',
                       color: 'var(--text-main)',
                       fontSize: '12px',
                       outline: 'none',
@@ -1047,9 +1085,13 @@ export default function MessagingDock() {
                     type="submit"
                     disabled={!inputText.trim() || sending}
                     style={{
-                      background: inputText.trim() ? 'var(--jns-gold)' : 'rgba(212, 160, 23, 0.2)',
+                      background: inputText.trim()
+                        ? 'var(--jns-gold)'
+                        : (isLight ? '#e2e8f0' : 'rgba(212, 160, 23, 0.2)'),
                       border: 'none',
-                      color: inputText.trim() ? '#000' : 'rgba(255, 255, 255, 0.3)',
+                      color: inputText.trim()
+                        ? '#000'
+                        : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.3)'),
                       borderRadius: '50%',
                       width: '32px',
                       height: '32px',
