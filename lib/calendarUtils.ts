@@ -296,3 +296,143 @@ export function formatTimeDisplay(timeStr?: string): string {
   if (!timeStr) return '';
   return timeStr;
 }
+
+export function formatDurationMinutes(mins: number): string {
+  if (mins <= 0) return '0m';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+export interface EventSlotSpan {
+  startSlotIndex: number;
+  span: number; // rowSpan count
+  durationMinutes: number;
+  formattedRange: string;
+  formattedDuration: string;
+  startHourStr: string;
+  endHourStr: string;
+}
+
+/**
+ * Calculates rowSpan and time formatting for a shoot in the calendar grid.
+ */
+export function getEventSlotSpan(
+  timeStr?: string,
+  defaultDurationMin: number = 90
+): EventSlotSpan {
+  // Pattern matching for "10:00 - 12:30", "14:00 to 16:00 IDT", or single time "10:00"
+  let startMinutes = 10 * 60;
+  let endMinutes = startMinutes + defaultDurationMin;
+
+  if (timeStr && typeof timeStr === 'string' && timeStr.trim()) {
+    const clean = timeStr.trim();
+    const rangeMatch = clean.match(/(\d{1,2}):(\d{2})\s*(?:am|pm)?\s*[-–—to]+\s*(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+    if (rangeMatch) {
+      let startH = parseInt(rangeMatch[1], 10);
+      const startM = parseInt(rangeMatch[2], 10);
+      let endH = parseInt(rangeMatch[3], 10);
+      const endM = parseInt(rangeMatch[4], 10);
+      const endAmPm = rangeMatch[5]?.toLowerCase();
+
+      if (endAmPm === 'pm' && endH < 12) endH += 12;
+      if (endAmPm === 'am' && endH === 12) endH = 0;
+      if (endAmPm === 'pm' && startH < 12 && startH <= endH - 12) {
+        startH += 12;
+      }
+
+      startMinutes = startH * 60 + startM;
+      endMinutes = Math.max(endH * 60 + endM, startMinutes + 15);
+    } else {
+      const matchColon = clean.match(/^(\d{1,2}):(\d{2})(?:\s*(am|pm))?/i);
+      if (matchColon) {
+        let hours = parseInt(matchColon[1], 10);
+        const minutes = parseInt(matchColon[2], 10);
+        const ampm = matchColon[3]?.toLowerCase();
+        if (ampm === 'pm' && hours < 12) hours += 12;
+        if (ampm === 'am' && hours === 12) hours = 0;
+        startMinutes = hours * 60 + minutes;
+        endMinutes = startMinutes + defaultDurationMin;
+      }
+    }
+  }
+
+  const durationMinutes = Math.max(15, endMinutes - startMinutes);
+  const BASE_MINUTES = 8 * 60; // 08:00 is slot index 0
+
+  const startSlotIndex = Math.max(0, Math.min(TIME_SLOTS.length - 1, Math.floor((startMinutes - BASE_MINUTES) / 60)));
+  const endSlotIndex = Math.max(startSlotIndex + 1, Math.min(TIME_SLOTS.length, Math.ceil((endMinutes - BASE_MINUTES) / 60)));
+  const span = Math.max(1, endSlotIndex - startSlotIndex);
+
+  const startH = Math.floor(startMinutes / 60);
+  const startM = startMinutes % 60;
+  const endH = Math.floor(endMinutes / 60);
+  const endM = endMinutes % 60;
+  const startHourStr = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
+  const endHourStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+  const formattedRange = `${startHourStr} – ${endHourStr}`;
+
+  return {
+    startSlotIndex,
+    span,
+    durationMinutes,
+    formattedRange,
+    formattedDuration: formatDurationMinutes(durationMinutes),
+    startHourStr,
+    endHourStr,
+  };
+}
+
+export interface SlotScheduleItem<T> {
+  slotIndex: number;
+  slotHour: string;
+  isCovered: boolean; // true if covered by an earlier item's rowSpan (skip <td>)
+  startsHere: boolean; // true if an item starts at this slot
+  items: T[]; // items starting at this slot
+  rowSpan: number; // rowSpan for the <td>
+}
+
+/**
+ * Precalculates the hourly schedule for a calendar column (Studio or Remote)
+ * to support multi-hour rowSpan blocks with exact table alignment.
+ */
+export function buildDayColumnSchedule<T extends { filmingTime?: string; rentalDetails?: { recordingTime?: string } }>(
+  items: T[],
+  defaultDurationMin: number = 90
+): SlotScheduleItem<T>[] {
+  const schedule: SlotScheduleItem<T>[] = TIME_SLOTS.map((slotHour, slotIndex) => ({
+    slotIndex,
+    slotHour,
+    isCovered: false,
+    startsHere: false,
+    items: [],
+    rowSpan: 1,
+  }));
+
+  // Map each item to its starting slot index
+  items.forEach((item) => {
+    const timeStr = item.filmingTime || item.rentalDetails?.recordingTime;
+    const spanInfo = getEventSlotSpan(timeStr, defaultDurationMin);
+    const startIdx = spanInfo.startSlotIndex;
+    schedule[startIdx].items.push(item);
+    schedule[startIdx].startsHere = true;
+    schedule[startIdx].rowSpan = Math.max(schedule[startIdx].rowSpan, spanInfo.span);
+  });
+
+  // Mark subsequent slots covered by multi-slot spans
+  for (let i = 0; i < schedule.length; i++) {
+    if (schedule[i].startsHere && schedule[i].rowSpan > 1) {
+      const span = schedule[i].rowSpan;
+      for (let j = 1; j < span && i + j < schedule.length; j++) {
+        // If another item starts at this slot (conflict), don't hide it
+        if (!schedule[i + j].startsHere) {
+          schedule[i + j].isCovered = true;
+        }
+      }
+    }
+  }
+
+  return schedule;
+}

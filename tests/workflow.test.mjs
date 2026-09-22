@@ -26,6 +26,7 @@ import {
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
 import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict } from '../lib/utils';
+import { formatDurationMinutes, getEventSlotSpan, buildDayColumnSchedule } from '../lib/calendarUtils';
 registerDbAccess({ getDbAsync, saveDbAsync });
 import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
 import { POST as postReset } from '../app/api/reset/route';
@@ -1765,13 +1766,155 @@ try {
   console.error('✗ Test 27 Failed', err);
 }
 
+// Test 28: Production Scheduling End Time, Duration Formatting & Multi-Hour Calendar Slot Spanning
+try {
+  // 1. Test formatDurationMinutes utility
+  assert.strictEqual(formatDurationMinutes(45), '45m');
+  assert.strictEqual(formatDurationMinutes(60), '1h');
+  assert.strictEqual(formatDurationMinutes(90), '1h 30m');
+  assert.strictEqual(formatDurationMinutes(120), '2h');
+  assert.strictEqual(formatDurationMinutes(150), '2h 30m');
+  assert.strictEqual(formatDurationMinutes(180), '3h');
+
+  // 2. Test getEventSlotSpan utility
+  // Default 90m for legacy single time
+  const legacySpan = getEventSlotSpan('10:00', 90);
+  assert.strictEqual(legacySpan.formattedRange, '10:00 – 11:30');
+  assert.strictEqual(legacySpan.durationMinutes, 90);
+  assert.strictEqual(legacySpan.formattedDuration, '1h 30m');
+  assert.strictEqual(legacySpan.span, 2);
+  assert.strictEqual(legacySpan.startSlotIndex, 2); // 10:00 is index 2 (TIME_SLOTS begins at 08:00)
+
+  // Explicit 2-hour shoot (10:00 - 12:00)
+  const twoHourSpan = getEventSlotSpan('10:00 - 12:00', 90);
+  assert.strictEqual(twoHourSpan.formattedRange, '10:00 – 12:00');
+  assert.strictEqual(twoHourSpan.durationMinutes, 120);
+  assert.strictEqual(twoHourSpan.formattedDuration, '2h');
+  assert.strictEqual(twoHourSpan.span, 2);
+  assert.strictEqual(twoHourSpan.startSlotIndex, 2);
+
+  // Explicit 3-hour rental shoot (10:00 - 13:00)
+  const threeHourSpan = getEventSlotSpan('10:00 - 13:00', 90);
+  assert.strictEqual(threeHourSpan.formattedRange, '10:00 – 13:00');
+  assert.strictEqual(threeHourSpan.durationMinutes, 180);
+  assert.strictEqual(threeHourSpan.formattedDuration, '3h');
+  assert.strictEqual(threeHourSpan.span, 3);
+  assert.strictEqual(threeHourSpan.startSlotIndex, 2);
+
+  // 3. Test buildDayColumnSchedule grid schedule mapping
+  const mockRentalProd = {
+    id: 'prod_test_rental_3h',
+    title: 'Jerusalem Post Studio Rental',
+    type: 'RENTAL',
+    filmingDate: '2026-10-15',
+    filmingTime: '10:00 - 13:00',
+    location: 'IN_STUDIO',
+  };
+  const mockAfternoonShoot = {
+    id: 'prod_test_afternoon',
+    title: 'Special Briefing',
+    type: 'EPISODE',
+    filmingDate: '2026-10-15',
+    filmingTime: '15:00 - 16:30',
+    location: 'IN_STUDIO',
+  };
+
+  const daySchedule = buildDayColumnSchedule([mockRentalProd, mockAfternoonShoot], 90);
+  // TIME_SLOTS: ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', ...]
+  // Slot 1 (09:00): empty, not covered
+  assert.strictEqual(daySchedule[1].isCovered, false);
+  assert.strictEqual(daySchedule[1].items.length, 0);
+
+  // Slot 2 (10:00): start of 3h rental -> rowSpan: 3, items: [mockRentalProd], not covered
+  assert.strictEqual(daySchedule[2].isCovered, false);
+  assert.strictEqual(daySchedule[2].rowSpan, 3);
+  assert.strictEqual(daySchedule[2].items[0].id, mockRentalProd.id);
+
+  // Slot 3 (11:00): covered by rental
+  assert.strictEqual(daySchedule[3].isCovered, true);
+
+  // Slot 4 (12:00): covered by rental
+  assert.strictEqual(daySchedule[4].isCovered, true);
+
+  // Slot 5 (13:00): rental ends at 13:00, slot 5 is free!
+  assert.strictEqual(daySchedule[5].isCovered, false);
+  assert.strictEqual(daySchedule[5].items.length, 0);
+
+  // Slot 7 (15:00): start of afternoon shoot -> rowSpan: 2 (15:00 - 16:30 covers 15:00 and 16:00)
+  assert.strictEqual(daySchedule[7].isCovered, false);
+  assert.strictEqual(daySchedule[7].rowSpan, 2);
+  assert.strictEqual(daySchedule[7].items[0].id, mockAfternoonShoot.id);
+
+  // Slot 8 (16:00): covered by afternoon shoot
+  assert.strictEqual(daySchedule[8].isCovered, true);
+
+  // 4. Create an Episode with explicit start and end time via createNewEpisode
+  const schedEpisode = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '995',
+      filmingDate: '2026-10-20',
+      filmingTime: '10:00 - 12:30', // 2.5 hours
+      location: 'IN_STUDIO',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+  assert.strictEqual(schedEpisode.filmingTime, '10:00 - 12:30');
+
+  // 5. Verify studio conflict detection across the full span of the shoot
+  // A shoot starting at 11:30 must conflict with '10:00 - 12:30'
+  const conflict1 = findStudioConflict(
+    [schedEpisode],
+    '2026-10-20',
+    '11:30 - 12:30',
+    'IN_STUDIO'
+  );
+  assert.strictEqual(conflict1.hasConflict, true, 'Shoot overlapping with 10:00-12:30 must trigger conflict');
+
+  // A shoot starting at 12:30 must NOT conflict with '10:00 - 12:30'
+  const nonConflict = findStudioConflict(
+    [schedEpisode],
+    '2026-10-20',
+    '12:30 - 13:30',
+    'IN_STUDIO'
+  );
+  assert.strictEqual(nonConflict.hasConflict, false, 'Shoot starting after end time must NOT trigger conflict');
+
+  // 6. Create a Rental with explicit start/end time and hoursCount
+  const rentalProd = await createNewRental(
+    {
+      clientName: 'i24 News Special Broadcast',
+      projectName: 'Live Cross',
+      contactName: 'David Cohen',
+      contactInfo: 'david@i24news.tv',
+      recordingDate: '2026-10-22',
+      recordingTime: '10:00 - 14:00',
+      hoursCount: '4',
+      agreedPrice: '1400',
+      studioSetup: 'Main desk',
+      producerId: producerUser.id,
+    },
+    producerUser
+  );
+  assert.strictEqual(rentalProd.filmingTime, '10:00 - 14:00');
+  assert.strictEqual(rentalProd.type, 'RENTAL');
+
+  console.log('✓ Test 28 Passed: Production Scheduling End Time, Duration Formatting & Multi-Hour Calendar Slot Spanning verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 28 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 27 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 28 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 27) {
+if (testsPassed !== 28) {
   process.exit(1);
 }

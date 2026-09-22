@@ -23,6 +23,36 @@ import { useUser } from './UserContext';
 import { countWords, isEligibleEditor, findStudioConflict } from '@/lib/utils';
 import { EquipmentPurchaseType } from '@/lib/types';
 
+function addMinutesToTimeStr(timeStr: string, minutesToAdd: number): string {
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return '11:30';
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const total = h * 60 + m + minutesToAdd;
+  const newH = Math.floor(total / 60) % 24;
+  const newM = total % 60;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+}
+
+function getMinutesDiff(startStr: string, endStr: string): number {
+  const matchA = startStr.match(/^(\d{1,2}):(\d{2})/);
+  const matchB = endStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!matchA || !matchB) return 90;
+  const minA = parseInt(matchA[1], 10) * 60 + parseInt(matchA[2], 10);
+  const minB = parseInt(matchB[1], 10) * 60 + parseInt(matchB[2], 10);
+  return minB - minA;
+}
+
+function calculateDurationDisplay(startTime: string, endTime: string): string {
+  const diff = getMinutesDiff(startTime, endTime);
+  if (diff <= 0) return 'Invalid (end after start)';
+  const h = Math.floor(diff / 60);
+  const m = diff % 60;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h} hr${h > 1 ? 's' : ''}`;
+  return `${h}h ${m}m`;
+}
+
 interface QuickActionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -49,7 +79,9 @@ export default function QuickActionModal({
   const [epShowId, setEpShowId] = useState('');
   const [epNumber, setEpNumber] = useState('');
   const [epFilmingDate, setEpFilmingDate] = useState(new Date().toISOString().split('T')[0]);
-  const [epFilmingTime, setEpFilmingTime] = useState('10:00');
+  const [epFilmingStartTime, setEpFilmingStartTime] = useState('10:00');
+  const [epFilmingEndTime, setEpFilmingEndTime] = useState('11:30');
+  const epFilmingTime = epFilmingEndTime ? `${epFilmingStartTime} - ${epFilmingEndTime}` : epFilmingStartTime;
   const [epLocation, setEpLocation] = useState<'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE'>('IN_STUDIO');
   const [epEditingDeadline, setEpEditingDeadline] = useState('');
   const [epPubDeadline, setEpPubDeadline] = useState('');
@@ -61,7 +93,9 @@ export default function QuickActionModal({
   const [pilotTitle, setPilotTitle] = useState('');
   const [pilotConcept, setPilotConcept] = useState('');
   const [pilotFilmingDate, setPilotFilmingDate] = useState(new Date().toISOString().split('T')[0]);
-  const [pilotFilmingTime, setPilotFilmingTime] = useState('10:00');
+  const [pilotFilmingStartTime, setPilotFilmingStartTime] = useState('10:00');
+  const [pilotFilmingEndTime, setPilotFilmingEndTime] = useState('11:30');
+  const pilotFilmingTime = pilotFilmingEndTime ? `${pilotFilmingStartTime} - ${pilotFilmingEndTime}` : pilotFilmingStartTime;
   const [pilotLocation, setPilotLocation] = useState<'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE'>('IN_STUDIO');
   const [pilotPriority, setPilotPriority] = useState('NORMAL');
   const [pilotProducerId, setPilotProducerId] = useState('');
@@ -73,7 +107,9 @@ export default function QuickActionModal({
   const [rentalContactName, setRentalContactName] = useState('');
   const [rentalContactInfo, setRentalContactInfo] = useState('');
   const [rentalDate, setRentalDate] = useState(new Date().toISOString().split('T')[0]);
-  const [rentalTime, setRentalTime] = useState('10:00 - 13:00 IDT');
+  const [rentalStartTime, setRentalStartTime] = useState('10:00');
+  const [rentalEndTime, setRentalEndTime] = useState('13:00');
+  const rentalTime = rentalEndTime ? `${rentalStartTime} - ${rentalEndTime} IDT` : rentalStartTime;
   const [rentalSetup, setRentalSetup] = useState('Main Studio Multi-Cam & Live TVU transmission');
   const [rentalProducerId, setRentalProducerId] = useState('');
   const [rentalPrice, setRentalPrice] = useState('$1,500');
@@ -759,16 +795,71 @@ export default function QuickActionModal({
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Filming Time</label>
-                  <input
-                    type="text"
-                    list="filming-time-presets"
-                    className="form-input"
-                    placeholder="e.g. 10:00 or 14:00-16:00"
-                    value={epFilmingTime}
-                    onChange={(e) => setEpFilmingTime(e.target.value)}
-                  />
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>
+                      Filming Schedule (Start & End Time) <span className="req">*</span>
+                    </label>
+                    {epFilmingStartTime && epFilmingEndTime && (
+                      <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px', background: 'rgba(212, 160, 23, 0.15)', color: 'var(--jns-gold)' }}>
+                        ⏳ {calculateDurationDisplay(epFilmingStartTime, epFilmingEndTime)} studio time
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>Start Time</div>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={epFilmingStartTime}
+                        onChange={(e) => {
+                          const newStart = e.target.value;
+                          setEpFilmingStartTime(newStart);
+                          if (epFilmingStartTime && epFilmingEndTime) {
+                            const diff = getMinutesDiff(epFilmingStartTime, epFilmingEndTime);
+                            if (diff > 0) {
+                              setEpFilmingEndTime(addMinutesToTimeStr(newStart, diff));
+                            }
+                          }
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>End Time</div>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={epFilmingEndTime}
+                        onChange={(e) => setEpFilmingEndTime(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick duration presets */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '0.45rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Quick Duration:</span>
+                    {[
+                      { label: '+45 min', mins: 45 },
+                      { label: '+1 hour', mins: 60 },
+                      { label: '+1.5 hours', mins: 90 },
+                      { label: '+2 hours', mins: 120 },
+                      { label: '+3 hours', mins: 180 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setEpFilmingEndTime(addMinutesToTimeStr(epFilmingStartTime, p.mins))}
+                        className="btn btn-secondary btn-xs"
+                        style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '4px' }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -938,16 +1029,71 @@ export default function QuickActionModal({
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Filming Time</label>
-                  <input
-                    type="text"
-                    list="filming-time-presets"
-                    className="form-input"
-                    placeholder="e.g. 10:00 or 14:00-16:00"
-                    value={pilotFilmingTime}
-                    onChange={(e) => setPilotFilmingTime(e.target.value)}
-                  />
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>
+                      Filming Schedule (Start & End Time) <span className="req">*</span>
+                    </label>
+                    {pilotFilmingStartTime && pilotFilmingEndTime && (
+                      <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px', background: 'rgba(147, 51, 234, 0.15)', color: '#c084fc' }}>
+                        ⏳ {calculateDurationDisplay(pilotFilmingStartTime, pilotFilmingEndTime)} studio time
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>Start Time</div>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={pilotFilmingStartTime}
+                        onChange={(e) => {
+                          const newStart = e.target.value;
+                          setPilotFilmingStartTime(newStart);
+                          if (pilotFilmingStartTime && pilotFilmingEndTime) {
+                            const diff = getMinutesDiff(pilotFilmingStartTime, pilotFilmingEndTime);
+                            if (diff > 0) {
+                              setPilotFilmingEndTime(addMinutesToTimeStr(newStart, diff));
+                            }
+                          }
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>End Time</div>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={pilotFilmingEndTime}
+                        onChange={(e) => setPilotFilmingEndTime(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick duration presets */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '0.45rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Quick Duration:</span>
+                    {[
+                      { label: '+45 min', mins: 45 },
+                      { label: '+1 hour', mins: 60 },
+                      { label: '+1.5 hours', mins: 90 },
+                      { label: '+2 hours', mins: 120 },
+                      { label: '+3 hours', mins: 180 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setPilotFilmingEndTime(addMinutesToTimeStr(pilotFilmingStartTime, p.mins))}
+                        className="btn btn-secondary btn-xs"
+                        style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '4px' }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -1098,7 +1244,7 @@ export default function QuickActionModal({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                 <div className="form-group">
-                  <label className="form-label">Recording Date</label>
+                  <label className="form-label">Recording Date <span className="req">*</span></label>
                   <input
                     type="date"
                     className="form-input"
@@ -1108,16 +1254,87 @@ export default function QuickActionModal({
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Recording Time</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. 14:00 - 16:30 IDT"
-                    value={rentalTime}
-                    onChange={(e) => setRentalTime(e.target.value)}
-                    required
-                  />
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>
+                      Studio Recording Time (Start & End) <span className="req">*</span>
+                    </label>
+                    {rentalStartTime && rentalEndTime && (
+                      <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px', background: 'rgba(124, 58, 237, 0.15)', color: '#a78bfa' }}>
+                        ⏳ {calculateDurationDisplay(rentalStartTime, rentalEndTime)} booked
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>Start Time (IDT)</div>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={rentalStartTime}
+                        onChange={(e) => {
+                          const newStart = e.target.value;
+                          setRentalStartTime(newStart);
+                          if (rentalStartTime && rentalEndTime) {
+                            const diff = getMinutesDiff(rentalStartTime, rentalEndTime);
+                            if (diff > 0) {
+                              const newEnd = addMinutesToTimeStr(newStart, diff);
+                              setRentalEndTime(newEnd);
+                              const h = diff / 60;
+                              setRentalHours(h === Math.floor(h) ? `${h} hours` : `${h.toFixed(1)} hours`);
+                            }
+                          }
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>End Time (IDT)</div>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={rentalEndTime}
+                        onChange={(e) => {
+                          const newEnd = e.target.value;
+                          setRentalEndTime(newEnd);
+                          const diff = getMinutesDiff(rentalStartTime, newEnd);
+                          if (diff > 0) {
+                            const h = diff / 60;
+                            setRentalHours(h === Math.floor(h) ? `${h} hours` : `${h.toFixed(1)} hours`);
+                          }
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick duration presets */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '0.45rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Quick Duration:</span>
+                    {[
+                      { label: '+1 hour', mins: 60 },
+                      { label: '+2 hours', mins: 120 },
+                      { label: '+3 hours', mins: 180 },
+                      { label: '+4 hours', mins: 240 },
+                      { label: '+5 hours', mins: 300 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => {
+                          const newEnd = addMinutesToTimeStr(rentalStartTime, p.mins);
+                          setRentalEndTime(newEnd);
+                          const h = p.mins / 60;
+                          setRentalHours(`${h} hours`);
+                        }}
+                        className="btn btn-secondary btn-xs"
+                        style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '4px' }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="form-group">
