@@ -969,6 +969,8 @@ function generateSeedProductions(): Production[] {
       priority: 'HIGH',
       currentStage: 'RECORDING_DONE',
       filmingDate: today,
+      filmingTime: '14:30 - 16:00 IDT',
+      location: 'STUDIO',
       createdById: 'usr_zach_producer',
       producerId: 'usr_zach_producer',
       createdAt: yesterday,

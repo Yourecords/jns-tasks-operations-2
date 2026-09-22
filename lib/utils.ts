@@ -157,13 +157,36 @@ export function isTimeRangeOverlapping(rangeA: TimeRangeMinutes, rangeB: TimeRan
 
 /**
  * Checks if a recording location/type occupies the physical studio.
+ * - Any RENTAL (Studio Rental) ALWAYS occupies the physical studio facility.
  * - 'IN_STUDIO' or 'STUDIO': Yes (Physical studio occupied)
  * - 'STUDIO_REMOTE_GUEST': Yes (Physical studio occupied by host/panel while guest is remote)
- * - 'FULLY_REMOTE' or 'REMOTE': No (Zero physical studio occupation)
+ * - 'FULLY_REMOTE' or 'REMOTE' or 'FIELD': No (Zero physical studio occupation)
  */
-export function requiresStudio(loc?: string): boolean {
+export function requiresStudio(loc?: string, type?: string): boolean {
+  if (type === 'RENTAL') return true;
   if (!loc) return true; // Default for studio productions
-  return loc === 'IN_STUDIO' || loc === 'STUDIO_REMOTE_GUEST' || loc === 'STUDIO';
+  const normalized = String(loc).trim().toUpperCase();
+  if (normalized === 'FULLY_REMOTE' || normalized === 'REMOTE' || normalized === 'FIELD') {
+    return false;
+  }
+  return (
+    normalized === 'IN_STUDIO' ||
+    normalized === 'STUDIO_REMOTE_GUEST' ||
+    normalized === 'STUDIO' ||
+    normalized.includes('STUDIO') ||
+    normalized.includes('RENTAL') ||
+    normalized.includes('DESK')
+  );
+}
+
+export function isStudioProduction(p?: { type?: string; location?: string; recordingType?: string }): boolean {
+  if (!p) return true;
+  if (p.type === 'RENTAL') return true;
+  return requiresStudio(p.location || p.recordingType, p.type);
+}
+
+export function isRemoteProduction(p?: { type?: string; location?: string; recordingType?: string }): boolean {
+  return !isStudioProduction(p);
 }
 
 /**
@@ -214,7 +237,7 @@ export function findStudioConflict<
 
     // Check if existing production occupies the physical studio
     const existingLocation = p.location || p.recordingType || (p.type === 'RENTAL' ? 'STUDIO' : 'STUDIO');
-    if (!requiresStudio(existingLocation)) continue; // Fully remote shoots do not occupy the studio
+    if (!requiresStudio(existingLocation, p.type)) continue; // Fully remote shoots do not occupy the studio
 
     // Determine time of existing shoot
     const existingTimeStr = p.filmingTime || p.rentalDetails?.recordingTime;

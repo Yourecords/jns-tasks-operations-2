@@ -20,7 +20,7 @@ import {
 import { getDb, saveDb, countWords, getDbAsync, saveDbAsync } from './db';
 import { updateProductionWithLock, insertProductionWithLock, deleteProductionWithLock, insertAuditLogWithLock, insertNotificationWithLock } from './pg';
 import { dispatchWorkflowEmail } from './email';
-import { findStudioConflict, requiresStudio } from './utils';
+import { findStudioConflict, requiresStudio, isStudioProduction } from './utils';
 
 // RBAC helper utilities
 export function canUserPerform(
@@ -1617,12 +1617,12 @@ export async function rescheduleProductionFilming(
   }
 
   // Check studio conflict if this production occupies the physical studio
-  if (requiresStudio(existing.location)) {
+  if (isStudioProduction(existing)) {
     const conflict = findStudioConflict(
       db.productions,
       filmingDate,
       filmingTime,
-      existing.location || 'IN_STUDIO',
+      existing.location || (existing.type === 'RENTAL' ? 'STUDIO' : 'IN_STUDIO'),
       productionId
     );
     if (conflict.hasConflict && conflict.conflictingProduction) {
@@ -1636,12 +1636,19 @@ export async function rescheduleProductionFilming(
     prod.filmingDate = filmingDate;
     prod.filmingTime = filmingTime;
 
+    if (prod.type === 'RENTAL' && prod.rentalDetails) {
+      prod.rentalDetails.recordingDate = filmingDate;
+      prod.rentalDetails.recordingTime = filmingTime;
+    }
+
     if (Array.isArray(prod.tasks)) {
       for (const task of prod.tasks) {
         if (
           task.stageName === 'FILMING' ||
+          task.stageName === 'RENTAL_SCHEDULED' ||
           task.title.toLowerCase().includes('filming') ||
-          task.title.toLowerCase().includes('shoot')
+          task.title.toLowerCase().includes('shoot') ||
+          task.title.toLowerCase().includes('rental')
         ) {
           task.dueDate = filmingDate;
           const startHour = filmingTime.split('-')[0].trim();

@@ -33,7 +33,7 @@ import {
 import { useUser } from '@/components/UserContext';
 import { Production, Meeting, Show, User } from '@/lib/types';
 import QuickActionModal from '@/components/QuickActionModal';
-import { requiresStudio, findStudioConflict } from '@/lib/utils';
+import { requiresStudio, findStudioConflict, isStudioProduction, isRemoteProduction } from '@/lib/utils';
 import {
   SHOW_THEMES,
   getShowTheme,
@@ -222,9 +222,10 @@ export default function ProductionCalendarPage() {
     const item = {
       type: 'FILMING_TASK' as const,
       productionId: production.id,
-      currentFilmingDate: production.filmingDate || '',
-      currentFilmingTime: production.filmingTime,
-      location: production.location,
+      currentFilmingDate: production.filmingDate || production.rentalDetails?.recordingDate || '',
+      currentFilmingTime: production.filmingTime || production.rentalDetails?.recordingTime,
+      location: production.type === 'RENTAL' ? 'STUDIO' : (production.location || 'IN_STUDIO'),
+      productionType: production.type,
       title: production.title,
     };
     setDraggedItem(item);
@@ -237,6 +238,7 @@ export default function ProductionCalendarPage() {
     if (!draggedItem || draggedItem.type !== 'FILMING_TASK') return;
 
     const { productionId, currentFilmingDate, currentFilmingTime, location, title } = draggedItem;
+    const productionType = (draggedItem as any).productionType;
     setDraggedItem(null);
 
     const newFilmingTime = computeNewFilmingTime(currentFilmingTime, targetSlotHour);
@@ -245,7 +247,7 @@ export default function ProductionCalendarPage() {
     if (currentFilmingDate === targetDate && currentFilmingTime === newFilmingTime) return;
 
     // Check studio conflict if this production requires the physical studio
-    if (requiresStudio(location)) {
+    if (productionType === 'RENTAL' || requiresStudio(location, productionType)) {
       const conflict = findStudioConflict(productions, targetDate, newFilmingTime, location || 'IN_STUDIO', productionId);
       if (conflict.hasConflict && conflict.conflictingProduction) {
         showToast(
@@ -264,6 +266,13 @@ export default function ProductionCalendarPage() {
             ...p,
             filmingDate: targetDate,
             filmingTime: newFilmingTime,
+            ...(p.rentalDetails ? {
+              rentalDetails: {
+                ...p.rentalDetails,
+                recordingDate: targetDate,
+                recordingTime: newFilmingTime,
+              }
+            } : {})
           };
         }
         return p;
@@ -465,12 +474,14 @@ export default function ProductionCalendarPage() {
     > = {};
 
     weekDays.forEach((day) => {
-      const dayStudioShoots = filteredProductions.filter(
-        (p) => p.filmingDate === day.dateString && requiresStudio(p.location)
-      );
-      const dayRemoteShoots = filteredProductions.filter(
-        (p) => p.filmingDate === day.dateString && !requiresStudio(p.location)
-      );
+      const dayStudioShoots = filteredProductions.filter((p) => {
+        const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+        return pDate === day.dateString && isStudioProduction(p);
+      });
+      const dayRemoteShoots = filteredProductions.filter((p) => {
+        const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+        return pDate === day.dateString && isRemoteProduction(p);
+      });
 
       schedules[day.dateString] = {
         studio: buildDayColumnSchedule(dayStudioShoots, 90),
@@ -484,12 +495,14 @@ export default function ProductionCalendarPage() {
   // Precomputed column schedules for Day Grid View with multi-hour rowSpan blocks
   const dayGridSchedules = useMemo(() => {
     const dayStr = selectedDayDate ? formatDateToYYYYMMDD(selectedDayDate) : '';
-    const dayStudioShoots = filteredProductions.filter(
-      (p) => p.filmingDate === dayStr && requiresStudio(p.location)
-    );
-    const dayRemoteShoots = filteredProductions.filter(
-      (p) => p.filmingDate === dayStr && !requiresStudio(p.location)
-    );
+    const dayStudioShoots = filteredProductions.filter((p) => {
+      const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+      return pDate === dayStr && isStudioProduction(p);
+    });
+    const dayRemoteShoots = filteredProductions.filter((p) => {
+      const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+      return pDate === dayStr && isRemoteProduction(p);
+    });
 
     return {
       studio: buildDayColumnSchedule(dayStudioShoots, 90),
@@ -1259,7 +1272,7 @@ export default function ProductionCalendarPage() {
                         const isStudioConflictOnHover =
                           isStudioOver &&
                           draggedItem?.type === 'FILMING_TASK' &&
-                          requiresStudio(draggedItem.location) &&
+                          isStudioProduction({ location: draggedItem.location, type: (draggedItem as any).productionType }) &&
                           findStudioConflict(
                             productions,
                             day.dateString,
@@ -1336,7 +1349,7 @@ export default function ProductionCalendarPage() {
                                   studioSlot?.items.map((p) => {
                                     const theme = getShowTheme(p.title, p.type);
                                     const isDraggingThis = draggedItem?.productionId === p.id;
-                                    const spanInfo = getEventSlotSpan(p.filmingTime, 90);
+                                    const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
                                     const cardMinHeight = (studioSlot?.rowSpan || 1) * 62 - 10;
 
                                     return (
@@ -1409,9 +1422,12 @@ export default function ProductionCalendarPage() {
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', fontSize: '9.5px', color: 'var(--text-secondary)' }}>
-                                          <span>{getUserName(p.producerId)}</span>
+                                          <span>{p.type === 'RENTAL' && p.rentalDetails?.clientName ? `Client: ${p.rentalDetails.clientName}` : getUserName(p.producerId)}</span>
                                           {p.location === 'STUDIO_REMOTE_GUEST' && (
                                             <span style={{ color: '#38bdf8', fontWeight: 700 }}>+ Remote</span>
+                                          )}
+                                          {p.type === 'RENTAL' && (
+                                            <span style={{ color: '#c084fc', fontWeight: 800, background: 'rgba(192, 132, 252, 0.15)', padding: '1px 4px', borderRadius: '3px' }}>RENTAL</span>
                                           )}
                                         </div>
                                         {p.editingDate && p.editingDate !== p.filmingDate && (
@@ -1465,7 +1481,7 @@ export default function ProductionCalendarPage() {
                                   remoteSlot?.items.map((p) => {
                                     const theme = getShowTheme(p.title, p.type);
                                     const isDraggingThis = draggedItem?.productionId === p.id;
-                                    const spanInfo = getEventSlotSpan(p.filmingTime, 90);
+                                    const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
                                     const cardMinHeight = (remoteSlot?.rowSpan || 1) * 62 - 10;
 
                                     return (
@@ -1945,11 +1961,20 @@ export default function ProductionCalendarPage() {
       {/* VIEW MODE 2: FULL-WINDOW SINGLE-DAY PRODUCTION CALENDAR */}
       {viewMode === 'day' && (() => {
         const dayStr = formatDateToYYYYMMDD(selectedDayDate);
-        const dayProds = filteredProductions.filter((p) => p.filmingDate === dayStr || p.editingDate === dayStr);
+        const dayProds = filteredProductions.filter((p) => {
+          const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+          return pDate === dayStr || p.editingDate === dayStr;
+        });
         const dayMtgs = getMeetingsForDay(dayStr);
         const dayDeliverables = getDeliverablesForDay(dayStr);
-        const dayStudioShoots = filteredProductions.filter((p) => p.filmingDate === dayStr && requiresStudio(p.location));
-        const dayRemoteShoots = filteredProductions.filter((p) => p.filmingDate === dayStr && !requiresStudio(p.location));
+        const dayStudioShoots = filteredProductions.filter((p) => {
+          const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+          return pDate === dayStr && isStudioProduction(p);
+        });
+        const dayRemoteShoots = filteredProductions.filter((p) => {
+          const pDate = p.filmingDate || p.rentalDetails?.recordingDate;
+          return pDate === dayStr && isRemoteProduction(p);
+        });
         const isSelectedDayToday = dayStr === formatDateToYYYYMMDD(new Date());
 
         return (
@@ -2305,7 +2330,7 @@ export default function ProductionCalendarPage() {
                       const isStudioConflictOnHover =
                         isStudioOver &&
                         draggedItem?.type === 'FILMING_TASK' &&
-                        requiresStudio(draggedItem.location) &&
+                        isStudioProduction({ location: draggedItem.location, type: (draggedItem as any).productionType }) &&
                         findStudioConflict(
                           productions,
                           dayStr,
@@ -2494,7 +2519,7 @@ export default function ProductionCalendarPage() {
                                     studioSlot?.items.map((p) => {
                                       const theme = getShowTheme(p.title, p.type);
                                       const isDraggingThis = draggedItem?.productionId === p.id;
-                                      const spanInfo = getEventSlotSpan(p.filmingTime, 90);
+                                      const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
                                       const cardMinHeight = (studioSlot?.rowSpan || 1) * 62 - 12;
 
                                       return (
@@ -2557,10 +2582,12 @@ export default function ProductionCalendarPage() {
                                             </div>
                                           </div>
                                           <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span>Prod: {getUserName(p.producerId)}</span>
-                                            {p.editorId && (
+                                            <span>{p.type === 'RENTAL' && p.rentalDetails?.clientName ? `Client: ${p.rentalDetails.clientName}` : `Prod: ${getUserName(p.producerId)}`}</span>
+                                            {p.type === 'RENTAL' ? (
+                                              <span style={{ color: '#c084fc', fontWeight: 800, background: 'rgba(192, 132, 252, 0.15)', padding: '1px 5px', borderRadius: '3px' }}>STUDIO RENTAL</span>
+                                            ) : p.editorId ? (
                                               <span style={{ color: '#c084fc' }}>Ed: {getUserName(p.editorId)}</span>
-                                            )}
+                                            ) : null}
                                           </div>
                                           {p.editingDate && p.editingDate !== p.filmingDate && (
                                             <div style={{ marginTop: '4px', fontSize: '9.5px', fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -2609,7 +2636,7 @@ export default function ProductionCalendarPage() {
                                     remoteSlot?.items.map((p) => {
                                       const theme = getShowTheme(p.title, p.type);
                                       const isDraggingThis = draggedItem?.productionId === p.id;
-                                      const spanInfo = getEventSlotSpan(p.filmingTime, 90);
+                                      const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
                                       const cardMinHeight = (remoteSlot?.rowSpan || 1) * 62 - 12;
 
                                       return (
@@ -3486,25 +3513,31 @@ export default function ProductionCalendarPage() {
                         >
                           {p.type}
                         </span>
-                        {p.location && (
+                        {(p.location || p.type === 'RENTAL') && (
                           <span
                             style={{
                               fontSize: '10px',
                               fontWeight: 800,
                               padding: '2px 7px',
                               borderRadius: '4px',
-                              background: !requiresStudio(p.location)
+                              background: p.type === 'RENTAL'
+                                ? 'rgba(168, 85, 247, 0.18)'
+                                : isRemoteProduction(p)
                                 ? 'rgba(16, 185, 129, 0.15)'
                                 : p.location === 'STUDIO_REMOTE_GUEST'
                                 ? 'rgba(14, 165, 233, 0.15)'
                                 : 'rgba(37, 99, 235, 0.15)',
-                              color: !requiresStudio(p.location)
+                              color: p.type === 'RENTAL'
+                                ? '#c084fc'
+                                : isRemoteProduction(p)
                                 ? '#34d399'
                                 : p.location === 'STUDIO_REMOTE_GUEST'
                                 ? '#38bdf8'
                                 : '#60a5fa',
                               border: `1px solid ${
-                                !requiresStudio(p.location)
+                                p.type === 'RENTAL'
+                                  ? 'rgba(168, 85, 247, 0.4)'
+                                  : isRemoteProduction(p)
                                   ? 'rgba(16, 185, 129, 0.3)'
                                   : p.location === 'STUDIO_REMOTE_GUEST'
                                   ? 'rgba(14, 165, 233, 0.3)'
@@ -3512,9 +3545,11 @@ export default function ProductionCalendarPage() {
                               }`,
                             }}
                           >
-                            {p.location === 'STUDIO_REMOTE_GUEST'
+                            {p.type === 'RENTAL'
+                              ? 'Studio Rental'
+                              : p.location === 'STUDIO_REMOTE_GUEST'
                               ? 'Studio + Remote Interviewee'
-                              : !requiresStudio(p.location)
+                              : isRemoteProduction(p)
                               ? 'Fully Remote Recording'
                               : 'In Studio Recording'}
                           </span>
@@ -3556,7 +3591,7 @@ export default function ProductionCalendarPage() {
                           {p.filmingDate || 'Not set'}
                         </div>
                         {(() => {
-                          const spanInfo = getEventSlotSpan(p.filmingTime, 90);
+                          const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
                           return (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '13px', color: 'var(--jns-gold)', fontWeight: 800 }}>
@@ -3578,13 +3613,15 @@ export default function ProductionCalendarPage() {
                             </div>
                           );
                         })()}
-                        {p.location && (
+                        {(p.location || p.type === 'RENTAL') && (
                           <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                             Setup:{' '}
                             <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>
-                              {p.location === 'STUDIO_REMOTE_GUEST'
+                              {p.type === 'RENTAL'
+                                ? `Studio Rental (${p.rentalDetails?.studioSetup || 'Main Studio'})`
+                                : p.location === 'STUDIO_REMOTE_GUEST'
                                 ? 'Studio + Remote Interviewee'
-                                : !requiresStudio(p.location)
+                                : isRemoteProduction(p)
                                 ? 'Fully Remote Recording'
                                 : 'In Studio Recording'}
                             </span>

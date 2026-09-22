@@ -25,7 +25,7 @@ import {
 } from '../lib/workflow';
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
-import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict } from '../lib/utils';
+import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict, requiresStudio, isStudioProduction, isRemoteProduction } from '../lib/utils';
 import { formatDurationMinutes, getEventSlotSpan, buildDayColumnSchedule } from '../lib/calendarUtils';
 registerDbAccess({ getDbAsync, saveDbAsync });
 import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
@@ -1987,13 +1987,117 @@ try {
   console.error('✗ Test 29 Failed', err);
 }
 
+// ----------------------------------------------------
+// TEST 30: Scheduled Rentals in Studio Column (Never Remote)
+// ----------------------------------------------------
+console.log('Running Test 30: Scheduled Rentals in Studio Column (Never Remote)...');
+try {
+  // 1. Create a Scheduled Rental
+  const testRental = await createNewRental(
+    {
+      clientName: 'Fox News Media',
+      projectName: 'Middle East Special Analysis',
+      contactName: 'Dana Perino',
+      contactInfo: 'dana@foxnews.example',
+      recordingDate: '2026-10-20',
+      recordingTime: '13:00 - 15:30',
+      studioSetup: 'Main Studio Multi-Cam & Live TVU transmission',
+      producerId: producerUser.id,
+      agreedPrice: '$3,500',
+      hoursCount: '2.5',
+      priority: 'HIGH',
+    },
+    producerUser
+  );
+
+  // 2. Verify classification helpers
+  assert.strictEqual(testRental.type, 'RENTAL');
+  assert.strictEqual(isStudioProduction(testRental), true, 'Scheduled rental must be classified as Studio Production');
+  assert.strictEqual(isRemoteProduction(testRental), false, 'Scheduled rental must NEVER be classified as Remote Production');
+  assert.strictEqual(requiresStudio(testRental.location, testRental.type), true, 'requiresStudio must return true for rental type');
+
+  // 3. Verify classification even if location string is custom or undefined
+  const customRental = {
+    ...testRental,
+    location: 'Main Studio Multi-Cam & Live TVU transmission',
+  };
+  assert.strictEqual(isStudioProduction(customRental), true, 'Custom setup rental must be classified as Studio Production');
+  assert.strictEqual(isRemoteProduction(customRental), false, 'Custom setup rental must NEVER be classified as Remote Production');
+
+  const omittedLocRental = {
+    ...testRental,
+    location: undefined,
+  };
+  assert.strictEqual(isStudioProduction(omittedLocRental), true, 'Rental without explicit location must be classified as Studio Production');
+  assert.strictEqual(isRemoteProduction(omittedLocRental), false, 'Rental without explicit location must NEVER be classified as Remote Production');
+
+  // 4. Test calendar column segregation logic
+  const dayProductions = [
+    testRental,
+    {
+      id: 'ep_remote_test',
+      type: 'EPISODE',
+      title: 'Remote Interview Ep',
+      filmingDate: '2026-10-20',
+      filmingTime: '11:00 - 12:00',
+      location: 'FULLY_REMOTE',
+    },
+    {
+      id: 'ep_studio_test',
+      type: 'EPISODE',
+      title: 'Studio Show Ep',
+      filmingDate: '2026-10-20',
+      filmingTime: '16:00 - 17:30',
+      location: 'IN_STUDIO',
+    },
+  ];
+
+  const studioCol = dayProductions.filter((p) => isStudioProduction(p));
+  const remoteCol = dayProductions.filter((p) => isRemoteProduction(p));
+
+  assert(studioCol.some((p) => p.id === testRental.id), 'Rental MUST be present in Studio column');
+  assert(!remoteCol.some((p) => p.id === testRental.id), 'Rental MUST NOT be present in Remote & Field Recordings column');
+  assert.strictEqual(studioCol.length, 2, 'Studio column should contain studio episode and rental');
+  assert.strictEqual(remoteCol.length, 1, 'Remote column should contain only remote episode');
+
+  // 5. Build day column schedule for studio and remote
+  const studioGrid = buildDayColumnSchedule(studioCol, 90);
+  const remoteGrid = buildDayColumnSchedule(remoteCol, 90);
+
+  const rentalSlot = studioGrid.find((slot) => slot.items.some((p) => p.id === testRental.id));
+  assert(rentalSlot, 'Rental must appear in Studio column grid');
+  assert.strictEqual(rentalSlot.slotHour, '13:00', 'Rental slot starts at 13:00');
+  assert(rentalSlot.rowSpan >= 2, 'Rental spanning 13:00 - 15:30 must span across multiple hourly rows');
+
+  const rentalInRemoteSlot = remoteGrid.find((slot) => slot.items.some((p) => p.id === testRental.id));
+  assert(!rentalInRemoteSlot, 'Rental must never appear in Remote column grid');
+
+  // 6. Test rescheduling rental synchronizes filming and rentalDetails
+  const rescheduled = await rescheduleProductionFilming(
+    testRental.id,
+    '2026-10-21',
+    '15:00 - 17:00',
+    producerUser
+  );
+  assert.strictEqual(rescheduled.filmingDate, '2026-10-21');
+  assert.strictEqual(rescheduled.filmingTime, '15:00 - 17:00');
+  assert(rescheduled.rentalDetails, 'Rental details must exist');
+  assert.strictEqual(rescheduled.rentalDetails.recordingDate, '2026-10-21');
+  assert.strictEqual(rescheduled.rentalDetails.recordingTime, '15:00 - 17:00');
+
+  console.log('✓ Test 30 Passed: Scheduled Rentals strictly placed in Studio Column and never in Remote Column');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 30 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 29 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 30 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 29) {
+if (testsPassed !== 30) {
   process.exit(1);
 }
