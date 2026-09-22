@@ -26,7 +26,7 @@ import {
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
 import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict, requiresStudio, isStudioProduction, isRemoteProduction } from '../lib/utils';
-import { formatDurationMinutes, getEventSlotSpan, buildDayColumnSchedule } from '../lib/calendarUtils';
+import { formatDurationMinutes, getEventSlotSpan, buildDayColumnSchedule, TIME_SLOTS } from '../lib/calendarUtils';
 registerDbAccess({ getDbAsync, saveDbAsync });
 import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
 import { POST as postReset } from '../app/api/reset/route';
@@ -1777,31 +1777,32 @@ try {
   assert.strictEqual(formatDurationMinutes(180), '3h');
 
   // 2. Test getEventSlotSpan utility
-  // Default 90m for legacy single time
+  // 2. Test getEventSlotSpan utility with 30-minute division
+  // Default 90m for legacy single time (10:00 - 11:30 = 3 x 30m slots)
   const legacySpan = getEventSlotSpan('10:00', 90);
   assert.strictEqual(legacySpan.formattedRange, '10:00 – 11:30');
   assert.strictEqual(legacySpan.durationMinutes, 90);
   assert.strictEqual(legacySpan.formattedDuration, '1h 30m');
-  assert.strictEqual(legacySpan.span, 2);
-  assert.strictEqual(legacySpan.startSlotIndex, 2); // 10:00 is index 2 (TIME_SLOTS begins at 08:00)
+  assert.strictEqual(legacySpan.span, 3);
+  assert.strictEqual(legacySpan.startSlotIndex, 4); // 10:00 is index 4 (08:00=0, 08:30=1, 09:00=2, 09:30=3, 10:00=4)
 
-  // Explicit 2-hour shoot (10:00 - 12:00)
+  // Explicit 2-hour shoot (10:00 - 12:00 = 4 x 30m slots)
   const twoHourSpan = getEventSlotSpan('10:00 - 12:00', 90);
   assert.strictEqual(twoHourSpan.formattedRange, '10:00 – 12:00');
   assert.strictEqual(twoHourSpan.durationMinutes, 120);
   assert.strictEqual(twoHourSpan.formattedDuration, '2h');
-  assert.strictEqual(twoHourSpan.span, 2);
-  assert.strictEqual(twoHourSpan.startSlotIndex, 2);
+  assert.strictEqual(twoHourSpan.span, 4);
+  assert.strictEqual(twoHourSpan.startSlotIndex, 4);
 
-  // Explicit 3-hour rental shoot (10:00 - 13:00)
+  // Explicit 3-hour rental shoot (10:00 - 13:00 = 6 x 30m slots)
   const threeHourSpan = getEventSlotSpan('10:00 - 13:00', 90);
   assert.strictEqual(threeHourSpan.formattedRange, '10:00 – 13:00');
   assert.strictEqual(threeHourSpan.durationMinutes, 180);
   assert.strictEqual(threeHourSpan.formattedDuration, '3h');
-  assert.strictEqual(threeHourSpan.span, 3);
-  assert.strictEqual(threeHourSpan.startSlotIndex, 2);
+  assert.strictEqual(threeHourSpan.span, 6);
+  assert.strictEqual(threeHourSpan.startSlotIndex, 4);
 
-  // 3. Test buildDayColumnSchedule grid schedule mapping
+  // 3. Test buildDayColumnSchedule grid schedule mapping with 30-minute intervals
   const mockRentalProd = {
     id: 'prod_test_rental_3h',
     title: 'Jerusalem Post Studio Rental',
@@ -1820,33 +1821,39 @@ try {
   };
 
   const daySchedule = buildDayColumnSchedule([mockRentalProd, mockAfternoonShoot], 90);
-  // TIME_SLOTS: ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', ...]
-  // Slot 1 (09:00): empty, not covered
-  assert.strictEqual(daySchedule[1].isCovered, false);
-  assert.strictEqual(daySchedule[1].items.length, 0);
-
-  // Slot 2 (10:00): start of 3h rental -> rowSpan: 3, items: [mockRentalProd], not covered
+  // TIME_SLOTS: ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', ...]
+  // Slot 2 (09:00): empty, not covered
   assert.strictEqual(daySchedule[2].isCovered, false);
-  assert.strictEqual(daySchedule[2].rowSpan, 3);
-  assert.strictEqual(daySchedule[2].items[0].id, mockRentalProd.id);
+  assert.strictEqual(daySchedule[2].items.length, 0);
 
-  // Slot 3 (11:00): covered by rental
-  assert.strictEqual(daySchedule[3].isCovered, true);
+  // Slot 4 (10:00): start of 3h rental -> rowSpan: 6, items: [mockRentalProd], not covered
+  assert.strictEqual(daySchedule[4].isCovered, false);
+  assert.strictEqual(daySchedule[4].rowSpan, 6);
+  assert.strictEqual(daySchedule[4].items[0].id, mockRentalProd.id);
 
-  // Slot 4 (12:00): covered by rental
-  assert.strictEqual(daySchedule[4].isCovered, true);
+  // Slot 5 (10:30): covered by rental
+  assert.strictEqual(daySchedule[5].isCovered, true);
 
-  // Slot 5 (13:00): rental ends at 13:00, slot 5 is free!
-  assert.strictEqual(daySchedule[5].isCovered, false);
-  assert.strictEqual(daySchedule[5].items.length, 0);
+  // Slot 9 (12:30): covered by rental
+  assert.strictEqual(daySchedule[9].isCovered, true);
 
-  // Slot 7 (15:00): start of afternoon shoot -> rowSpan: 2 (15:00 - 16:30 covers 15:00 and 16:00)
-  assert.strictEqual(daySchedule[7].isCovered, false);
-  assert.strictEqual(daySchedule[7].rowSpan, 2);
-  assert.strictEqual(daySchedule[7].items[0].id, mockAfternoonShoot.id);
+  // Slot 10 (13:00): rental ends at 13:00, slot 10 is free!
+  assert.strictEqual(daySchedule[10].isCovered, false);
+  assert.strictEqual(daySchedule[10].items.length, 0);
 
-  // Slot 8 (16:00): covered by afternoon shoot
-  assert.strictEqual(daySchedule[8].isCovered, true);
+  // Slot 14 (15:00): start of afternoon shoot -> rowSpan: 3 (15:00 - 16:30 covers 15:00, 15:30, 16:00)
+  assert.strictEqual(daySchedule[14].isCovered, false);
+  assert.strictEqual(daySchedule[14].rowSpan, 3);
+  assert.strictEqual(daySchedule[14].items[0].id, mockAfternoonShoot.id);
+
+  // Slot 15 (15:30): covered by afternoon shoot
+  assert.strictEqual(daySchedule[15].isCovered, true);
+
+  // Slot 16 (16:00): covered by afternoon shoot
+  assert.strictEqual(daySchedule[16].isCovered, true);
+
+  // Slot 17 (16:30): free!
+  assert.strictEqual(daySchedule[17].isCovered, false);
 
   // 4. Create an Episode with explicit start and end time via createNewEpisode
   const schedEpisode = await createNewEpisode(
@@ -2091,13 +2098,78 @@ try {
   console.error('✗ Test 30 Failed', err);
 }
 
+// ----------------------------------------------------
+// TEST 31: Production Calendar 30-Minute Time Column Division & Grid Alignment
+// ----------------------------------------------------
+console.log('Running Test 31: Production Calendar 30-Minute Time Column Division & Grid Alignment...');
+try {
+  // 1. Verify TIME_SLOTS contains 30-minute interval divisions from 08:00 to 21:30
+  assert(Array.isArray(TIME_SLOTS), 'TIME_SLOTS must be an array');
+  assert.strictEqual(TIME_SLOTS[0], '08:00');
+  assert.strictEqual(TIME_SLOTS[1], '08:30');
+  assert.strictEqual(TIME_SLOTS[2], '09:00');
+  assert.strictEqual(TIME_SLOTS[3], '09:30');
+  assert.strictEqual(TIME_SLOTS[4], '10:00');
+  assert.strictEqual(TIME_SLOTS[5], '10:30');
+  assert.strictEqual(TIME_SLOTS[TIME_SLOTS.length - 1], '21:30');
+
+  // Verify all entries alternate between :00 and :30
+  for (let i = 0; i < TIME_SLOTS.length; i++) {
+    if (i % 2 === 0) {
+      assert(TIME_SLOTS[i].endsWith(':00'), `Slot ${i} (${TIME_SLOTS[i]}) must end with :00`);
+    } else {
+      assert(TIME_SLOTS[i].endsWith(':30'), `Slot ${i} (${TIME_SLOTS[i]}) must end with :30`);
+    }
+  }
+
+  // 2. Test event starting on half-hour boundary (e.g. 10:30 shoot)
+  const halfHourSpan = getEventSlotSpan('10:30', 90);
+  assert.strictEqual(halfHourSpan.startSlotIndex, 5, '10:30 start should map to index 5');
+  assert.strictEqual(halfHourSpan.span, 3, '90m shoot should occupy 3 x 30m slots');
+  assert.strictEqual(halfHourSpan.formattedRange, '10:30 – 12:00');
+
+  // 3. Test afternoon half-hour range (e.g. Bloomberg rental 14:30 - 16:00)
+  const bloombergSpan = getEventSlotSpan('14:30 - 16:00 IDT', 90);
+  assert.strictEqual(bloombergSpan.startSlotIndex, 13, '14:30 start should map to index 13');
+  assert.strictEqual(bloombergSpan.span, 3, '14:30 to 16:00 (90m) should span 3 slots');
+  assert.strictEqual(bloombergSpan.formattedRange, '14:30 – 16:00');
+
+  // 4. Test 30-minute short event (rowSpan: 1)
+  const shortSpan = getEventSlotSpan('11:00 - 11:30', 30);
+  assert.strictEqual(shortSpan.startSlotIndex, 6);
+  assert.strictEqual(shortSpan.span, 1, '30m event should occupy exactly 1 slot');
+  assert.strictEqual(shortSpan.formattedRange, '11:00 – 11:30');
+
+  // 5. Test grid mapping for half-hour events
+  const mockHalfHourShoot = {
+    id: 'prod_half_hour_test',
+    title: 'Midday 10:30 Shoot',
+    filmingTime: '10:30 - 12:00',
+  };
+  const grid = buildDayColumnSchedule([mockHalfHourShoot], 90);
+  assert.strictEqual(grid[4].isCovered, false);
+  assert.strictEqual(grid[4].items.length, 0); // 10:00 is free
+  assert.strictEqual(grid[5].isCovered, false);
+  assert.strictEqual(grid[5].slotHour, '10:30');
+  assert.strictEqual(grid[5].startsHere, true);
+  assert.strictEqual(grid[5].rowSpan, 3);
+  assert.strictEqual(grid[6].isCovered, true); // 11:00 covered
+  assert.strictEqual(grid[7].isCovered, true); // 11:30 covered
+  assert.strictEqual(grid[8].isCovered, false); // 12:00 free!
+
+  console.log('✓ Test 31 Passed: Production Calendar 30-Minute Time Column Division & Grid Alignment verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 31 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 30 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 31 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 30) {
+if (testsPassed !== 31) {
   process.exit(1);
 }

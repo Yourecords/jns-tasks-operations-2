@@ -402,13 +402,15 @@ export default function ProductionCalendarPage() {
   }, [productions, searchQuery, selectedShowFilter, selectedTypeFilter, selectedPersonFilter, shows]);
 
   // Group events by day and slot
-  // Helper to extract hour string like "10:00" from time string
+  // Helper to extract 30-minute slot string like "10:00" or "10:30" from time string
   const getEventHour = (timeStr?: string): string => {
     if (!timeStr) return '10:00';
     const match = timeStr.match(/(\d{1,2}):(\d{2})/);
     if (!match) return '10:00';
     const hour = parseInt(match[1], 10);
-    return `${String(hour).padStart(2, '0')}:00`;
+    const minute = parseInt(match[2], 10);
+    const slotMin = minute < 30 ? '00' : '30';
+    return `${String(hour).padStart(2, '0')}:${slotMin}`;
   };
 
   // Weekly date range title
@@ -1133,28 +1135,30 @@ export default function ProductionCalendarPage() {
                     <tr
                       key={slotHour}
                       style={{
-                        borderBottom: '1px solid rgba(51, 65, 85, 0.4)',
-                        height: '62px',
+                        borderBottom: slotHour.endsWith(':30')
+                          ? '1px dashed rgba(51, 65, 85, 0.35)'
+                          : '1px solid rgba(51, 65, 85, 0.6)',
+                        height: '56px',
                       }}
                     >
                       {/* Left Sticky Time Label */}
                       <td
                         style={{
-                          padding: '6px',
+                          padding: '4px 6px',
                           background: 'var(--bg-main, #0f172a)',
                           borderRight: '2px solid var(--border-color, #334155)',
                           textAlign: 'center',
-                          verticalAlign: 'top',
+                          verticalAlign: 'middle',
                           fontSize: '11px',
-                          fontWeight: 700,
-                          color: 'var(--text-secondary)',
+                          fontWeight: slotHour.endsWith(':00') ? 800 : 500,
+                          color: slotHour.endsWith(':00') ? 'var(--text-main, #f8fafc)' : 'var(--text-secondary, #94a3b8)',
                           position: 'sticky',
                           left: 0,
                           zIndex: 9,
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                          <Clock size={11} />
+                          <Clock size={11} style={{ opacity: slotHour.endsWith(':00') ? 0.9 : 0.45 }} />
                           <span>{slotHour}</span>
                         </div>
                       </td>
@@ -1205,7 +1209,7 @@ export default function ProductionCalendarPage() {
                                 onClick={() => setSelectedEvent({ type: 'MEETING', data: meetingAtThisHour })}
                                 style={{
                                   height: '100%',
-                                  minHeight: `${mSpan * 62 - 10}px`,
+                                  minHeight: `${mSpan * 56 - 10}px`,
                                   borderRadius: '6px',
                                   padding: '6px 8px',
                                   background: 'rgba(71, 85, 105, 0.45)',
@@ -1342,7 +1346,7 @@ export default function ProductionCalendarPage() {
                                   </div>
                                 )}
                                 {studioSlot?.items.length === 0 ? (
-                                  <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '10.5px', fontStyle: 'italic', paddingLeft: '4px' }}>
+                                  <div style={{ height: '100%', minHeight: '38px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '10px', fontStyle: 'italic', paddingLeft: '4px' }}>
                                     {isStudioOver ? 'Drop shoot' : 'Available'}
                                   </div>
                                 ) : (
@@ -1350,7 +1354,7 @@ export default function ProductionCalendarPage() {
                                     const theme = getShowTheme(p.title, p.type);
                                     const isDraggingThis = draggedItem?.productionId === p.id;
                                     const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
-                                    const cardMinHeight = (studioSlot?.rowSpan || 1) * 62 - 10;
+                                    const cardMinHeight = (studioSlot?.rowSpan || 1) * 56 - 10;
 
                                     return (
                                       <div
@@ -1474,7 +1478,7 @@ export default function ProductionCalendarPage() {
                                 }}
                               >
                                 {remoteSlot?.items.length === 0 ? (
-                                  <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '10.5px', fontStyle: 'italic', paddingLeft: '4px' }}>
+                                  <div style={{ height: '100%', minHeight: '38px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '10px', fontStyle: 'italic', paddingLeft: '4px' }}>
                                     {isRemoteOver ? 'Drop remote' : 'Available'}
                                   </div>
                                 ) : (
@@ -1482,7 +1486,7 @@ export default function ProductionCalendarPage() {
                                     const theme = getShowTheme(p.title, p.type);
                                     const isDraggingThis = draggedItem?.productionId === p.id;
                                     const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
-                                    const cardMinHeight = (remoteSlot?.rowSpan || 1) * 62 - 10;
+                                    const cardMinHeight = (remoteSlot?.rowSpan || 1) * 56 - 10;
 
                                     return (
                                       <div
@@ -2346,27 +2350,30 @@ export default function ProductionCalendarPage() {
                         <tr
                           key={`single-day-slot-${slotHour}`}
                           style={{
-                            borderBottom: '1px solid var(--border-color, #334155)',
-                            height: '62px',
+                            borderBottom: slotHour.endsWith(':30')
+                              ? '1px dashed rgba(51, 65, 85, 0.35)'
+                              : '1px solid var(--border-color, #334155)',
+                            height: '56px',
                           }}
                         >
                           {/* Time Column */}
                           <td
                             style={{
-                              padding: '8px',
+                              padding: '4px 8px',
                               textAlign: 'center',
+                              verticalAlign: 'middle',
                               background: 'var(--bg-main, #0f172a)',
                               borderRight: '2px solid var(--border-color, #334155)',
                               fontSize: '11px',
-                              fontWeight: 700,
-                              color: 'var(--text-secondary)',
+                              fontWeight: slotHour.endsWith(':00') ? 800 : 500,
+                              color: slotHour.endsWith(':00') ? 'var(--text-main, #f8fafc)' : 'var(--text-secondary, #94a3b8)',
                               position: 'sticky',
                               left: 0,
                               zIndex: 9,
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                              <Clock size={11} />
+                              <Clock size={11} style={{ opacity: slotHour.endsWith(':00') ? 0.9 : 0.45 }} />
                               <span>{slotHour}</span>
                             </div>
                           </td>
@@ -2390,7 +2397,7 @@ export default function ProductionCalendarPage() {
                                   <div
                                     onClick={() => setSelectedEvent({ type: 'MEETING', data: meetingAtHour })}
                                     style={{
-                                      minHeight: `${mSpan * 62 - 14}px`,
+                                      minHeight: `${mSpan * 56 - 12}px`,
                                       height: mSpan > 1 ? 'calc(100% - 4px)' : 'auto',
                                       borderRadius: '8px',
                                       padding: '8px 12px',
@@ -2512,7 +2519,7 @@ export default function ProductionCalendarPage() {
                                   )}
 
                                   {studioSlot?.items.length === 0 ? (
-                                    <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.3)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
+                                    <div style={{ height: '100%', minHeight: '38px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.3)', fontSize: '10.5px', fontStyle: 'italic', paddingLeft: '6px' }}>
                                       {isStudioOver ? 'Drop to schedule studio shoot' : 'Available'}
                                     </div>
                                   ) : (
@@ -2520,7 +2527,7 @@ export default function ProductionCalendarPage() {
                                       const theme = getShowTheme(p.title, p.type);
                                       const isDraggingThis = draggedItem?.productionId === p.id;
                                       const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
-                                      const cardMinHeight = (studioSlot?.rowSpan || 1) * 62 - 12;
+                                      const cardMinHeight = (studioSlot?.rowSpan || 1) * 56 - 12;
 
                                       return (
                                         <div
@@ -2629,7 +2636,7 @@ export default function ProductionCalendarPage() {
                                   }}
                                 >
                                   {remoteSlot?.items.length === 0 ? (
-                                    <div style={{ height: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '11px', fontStyle: 'italic', paddingLeft: '6px' }}>
+                                    <div style={{ height: '100%', minHeight: '38px', display: 'flex', alignItems: 'center', color: 'rgba(148, 163, 184, 0.25)', fontSize: '10.5px', fontStyle: 'italic', paddingLeft: '6px' }}>
                                       {isRemoteOver ? 'Drop to schedule remote shoot' : 'No remote shoot'}
                                     </div>
                                   ) : (
@@ -2637,7 +2644,7 @@ export default function ProductionCalendarPage() {
                                       const theme = getShowTheme(p.title, p.type);
                                       const isDraggingThis = draggedItem?.productionId === p.id;
                                       const spanInfo = getEventSlotSpan(p.filmingTime || p.rentalDetails?.recordingTime, 90);
-                                      const cardMinHeight = (remoteSlot?.rowSpan || 1) * 62 - 12;
+                                      const cardMinHeight = (remoteSlot?.rowSpan || 1) * 56 - 12;
 
                                       return (
                                         <div

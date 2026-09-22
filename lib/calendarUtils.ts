@@ -264,22 +264,36 @@ export function getIsraeliWeekDays(baseDate: Date, fullWeek: boolean = false): C
   return days;
 }
 
-// Generates time slot hours from 08:00 to 21:00
+// Generates time slot intervals every 30 minutes from 08:00 to 21:30
 export const TIME_SLOTS = [
   '08:00',
+  '08:30',
   '09:00',
+  '09:30',
   '10:00',
+  '10:30',
   '11:00',
+  '11:30',
   '12:00',
+  '12:30',
   '13:00',
+  '13:30',
   '14:00',
+  '14:30',
   '15:00',
+  '15:30',
   '16:00',
+  '16:30',
   '17:00',
+  '17:30',
   '18:00',
+  '18:30',
   '19:00',
+  '19:30',
   '20:00',
+  '20:30',
   '21:00',
+  '21:30',
 ];
 
 export function parseMinutesFromMidnight(timeStr?: string): number {
@@ -361,9 +375,10 @@ export function getEventSlotSpan(
 
   const durationMinutes = Math.max(15, endMinutes - startMinutes);
   const BASE_MINUTES = 8 * 60; // 08:00 is slot index 0
+  const SLOT_MINUTES = 30; // 30-minute interval division
 
-  const startSlotIndex = Math.max(0, Math.min(TIME_SLOTS.length - 1, Math.floor((startMinutes - BASE_MINUTES) / 60)));
-  const endSlotIndex = Math.max(startSlotIndex + 1, Math.min(TIME_SLOTS.length, Math.ceil((endMinutes - BASE_MINUTES) / 60)));
+  const startSlotIndex = Math.max(0, Math.min(TIME_SLOTS.length - 1, Math.floor((startMinutes - BASE_MINUTES) / SLOT_MINUTES)));
+  const endSlotIndex = Math.max(startSlotIndex + 1, Math.min(TIME_SLOTS.length, Math.ceil((endMinutes - BASE_MINUTES) / SLOT_MINUTES)));
   const span = Math.max(1, endSlotIndex - startSlotIndex);
 
   const startH = Math.floor(startMinutes / 60);
