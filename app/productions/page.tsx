@@ -2,16 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Film, Plus, Filter, Search, Compass, Building2, Eye, Trash2, AlertTriangle, X, CheckCircle2 } from 'lucide-react';
+import { Film, Plus, Filter, Search, Compass, Building2, Eye, Trash2, AlertTriangle, X, CheckCircle2, Edit3 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, Show } from '@/lib/types';
 import QuickActionModal from '@/components/QuickActionModal';
+import ModifyProductionModal from '@/components/ModifyProductionModal';
 
 export default function ProductionsPage() {
   const { currentUser, allUsers } = useUser();
   const [productions, setProductions] = useState<Production[]>([]);
   const [shows, setShows] = useState<Show[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modify production state
+  const [modifyTarget, setModifyTarget] = useState<Production | null>(null);
 
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<Production | null>(null);
@@ -312,6 +316,27 @@ export default function ProductionsPage() {
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm"
+                              onClick={() => setModifyTarget(prod)}
+                              title={`Modify scheduled production "${prod.title}"`}
+                              style={{
+                                borderColor: 'rgba(59, 130, 246, 0.4)',
+                                color: '#60a5fa',
+                                backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '3px 8px',
+                                fontSize: '11px',
+                              }}
+                            >
+                              <Edit3 size={12} />
+                              <span>Modify</span>
+                            </button>
+                          )}
+                          {canCreate && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
                               onClick={() => {
                                 setDeleteError('');
                                 setDeleteTarget(prod);
@@ -348,6 +373,17 @@ export default function ProductionsPage() {
         onClose={() => setModalOpen(false)}
         defaultTab={modalTab}
         onSuccess={() => fetchData()}
+      />
+
+      <ModifyProductionModal
+        isOpen={Boolean(modifyTarget)}
+        onClose={() => setModifyTarget(null)}
+        production={modifyTarget}
+        onSuccess={() => {
+          fetchData();
+          setDeleteSuccess('Production modified successfully.');
+          setTimeout(() => setDeleteSuccess(''), 4000);
+        }}
       />
 
       {/* REMOVE TASK / PRODUCTION CONFIRMATION MODAL */}

@@ -1681,3 +1681,202 @@ export async function rescheduleProductionFilming(
   return updatedProd;
 }
 
+export async function modifyScheduledProduction(
+  productionId: string,
+  updates: {
+    title?: string;
+    filmingDate?: string;
+    filmingTime?: string;
+    editingDate?: string;
+    editingDeadline?: string;
+    publicationDeadline?: string;
+    location?: 'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE';
+    priority?: Priority;
+    producerId?: string;
+    editorId?: string;
+    status?: 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
+    showId?: string;
+    episodeNumber?: string;
+    conceptSummary?: string;
+    rentalDetails?: {
+      clientName?: string;
+      projectName?: string;
+      contactName?: string;
+      contactInfo?: string;
+      studioSetup?: string;
+      agreedPrice?: string;
+      hoursCount?: string;
+      specialRequirements?: string;
+    };
+  },
+  user: User
+): Promise<Production> {
+  const db = await getDbAsync();
+  const existing = db.productions.find((p) => p.id === productionId);
+  if (!existing) {
+    throw new Error('Production not found.');
+  }
+
+  // Only Admin or Producer (or creator/owner) can modify scheduled productions
+  if (
+    user.role !== 'ADMIN' &&
+    user.role !== 'PRODUCER' &&
+    user.id !== existing.producerId &&
+    user.id !== existing.createdById
+  ) {
+    throw new Error('Unauthorized: Only producers or administrators can modify scheduled productions.');
+  }
+
+  const targetFilmingDate = updates.filmingDate !== undefined ? updates.filmingDate : existing.filmingDate;
+  const targetFilmingTime = updates.filmingTime !== undefined ? updates.filmingTime : existing.filmingTime;
+  const targetLocation =
+    updates.location !== undefined
+      ? updates.location
+      : existing.location || (existing.type === 'RENTAL' ? 'STUDIO' : 'IN_STUDIO');
+
+  // Studio conflict check if production occupies studio
+  const willRequireStudio = existing.type === 'RENTAL' || requiresStudio(targetLocation, existing.type);
+  if (willRequireStudio && targetFilmingDate && targetFilmingTime) {
+    const conflict = findStudioConflict(
+      db.productions,
+      targetFilmingDate,
+      targetFilmingTime,
+      targetLocation,
+      productionId
+    );
+    if (conflict.hasConflict && conflict.conflictingProduction) {
+      throw new Error(
+        `Studio Double-Booking Conflict: "${conflict.conflictingProduction.title}" is already scheduled in the studio at that time (${conflict.conflictingProduction.filmingDate} ${conflict.conflictingProduction.filmingTime}). Physical studio cannot be double-booked.`
+      );
+    }
+  }
+
+  const updatedProd = await updateProductionWithLock(productionId, async (prod) => {
+    // 1. Show & Title
+    if (updates.showId !== undefined) prod.showId = updates.showId;
+    if (updates.episodeNumber !== undefined) prod.episodeNumber = updates.episodeNumber;
+
+    if (updates.title !== undefined && updates.title.trim()) {
+      prod.title = updates.title.trim();
+    } else if (prod.type === 'EPISODE' && (updates.showId || updates.episodeNumber)) {
+      const targetShowId = prod.showId || updates.showId;
+      const show = db.shows.find((s) => s.id === targetShowId);
+      if (show) {
+        prod.title = `${show.name} — Episode ${prod.episodeNumber || updates.episodeNumber || ''}`.trim();
+      }
+    }
+
+    // 2. Schedule
+    if (updates.filmingDate !== undefined) prod.filmingDate = updates.filmingDate;
+    if (updates.filmingTime !== undefined) prod.filmingTime = updates.filmingTime;
+    if (updates.editingDate !== undefined) prod.editingDate = updates.editingDate;
+    if (updates.editingDeadline !== undefined) prod.editingDeadline = updates.editingDeadline;
+    if (updates.publicationDeadline !== undefined) prod.publicationDeadline = updates.publicationDeadline;
+
+    // 3. Location, Priority, Personnel, Status
+    if (updates.location !== undefined) prod.location = updates.location;
+    if (updates.priority !== undefined) prod.priority = updates.priority;
+    if (updates.producerId !== undefined) prod.producerId = updates.producerId;
+    if (updates.editorId !== undefined) prod.editorId = updates.editorId;
+    if (updates.status !== undefined) prod.status = updates.status;
+
+    // 4. Pilot details
+    if (prod.type === 'PILOT') {
+      if (!prod.pilotDetails) {
+        prod.pilotDetails = {
+          id: `pdet_${prod.id}`,
+          productionId: prod.id,
+          conceptSummary: updates.conceptSummary || '',
+        };
+      } else if (updates.conceptSummary !== undefined) {
+        prod.pilotDetails.conceptSummary = updates.conceptSummary;
+      }
+    }
+
+    // 5. Rental details
+    if (prod.type === 'RENTAL') {
+      if (!prod.rentalDetails) {
+        prod.rentalDetails = {
+          id: `rdet_${prod.id}`,
+          productionId: prod.id,
+          clientName: updates.rentalDetails?.clientName || 'Client',
+          projectName: updates.rentalDetails?.projectName || 'Project',
+          contactName: updates.rentalDetails?.contactName || '',
+          contactInfo: updates.rentalDetails?.contactInfo || '',
+          recordingDate: prod.filmingDate || '',
+          recordingTime: prod.filmingTime || '',
+          studioSetup: updates.rentalDetails?.studioSetup || 'Main Studio',
+          producerId: prod.producerId || user.id,
+        };
+      }
+      if (prod.rentalDetails) {
+        prod.rentalDetails.recordingDate = prod.filmingDate || prod.rentalDetails.recordingDate;
+        prod.rentalDetails.recordingTime = prod.filmingTime || prod.rentalDetails.recordingTime;
+        if (updates.rentalDetails) {
+          if (updates.rentalDetails.clientName !== undefined) prod.rentalDetails.clientName = updates.rentalDetails.clientName;
+          if (updates.rentalDetails.projectName !== undefined) prod.rentalDetails.projectName = updates.rentalDetails.projectName;
+          if (updates.rentalDetails.contactName !== undefined) prod.rentalDetails.contactName = updates.rentalDetails.contactName;
+          if (updates.rentalDetails.contactInfo !== undefined) prod.rentalDetails.contactInfo = updates.rentalDetails.contactInfo;
+          if (updates.rentalDetails.studioSetup !== undefined) prod.rentalDetails.studioSetup = updates.rentalDetails.studioSetup;
+          if (updates.rentalDetails.agreedPrice !== undefined) prod.rentalDetails.agreedPrice = updates.rentalDetails.agreedPrice;
+          if (updates.rentalDetails.hoursCount !== undefined) prod.rentalDetails.hoursCount = updates.rentalDetails.hoursCount;
+          if (updates.rentalDetails.specialRequirements !== undefined) prod.rentalDetails.specialRequirements = updates.rentalDetails.specialRequirements;
+        }
+      }
+    }
+
+    // 6. Synchronize associated tasks
+    if (Array.isArray(prod.tasks)) {
+      for (const task of prod.tasks) {
+        if (
+          task.stageName === 'FILMING' ||
+          task.stageName === 'RENTAL_SCHEDULED' ||
+          task.title.toLowerCase().includes('filming') ||
+          task.title.toLowerCase().includes('shoot') ||
+          task.title.toLowerCase().includes('rental')
+        ) {
+          if (prod.filmingDate) task.dueDate = prod.filmingDate;
+          if (prod.filmingTime) task.dueTime = prod.filmingTime.split('-')[0].trim();
+          if (prod.producerId && !task.assignedUserId) task.assignedUserId = prod.producerId;
+          task.updatedAt = new Date().toISOString();
+        }
+
+        if (
+          task.stageName === 'EDITING' ||
+          task.title.toLowerCase().includes('edit')
+        ) {
+          if (prod.editingDate || prod.editingDeadline) {
+            task.dueDate = prod.editingDate || prod.editingDeadline;
+          }
+          if (prod.editorId) {
+            task.assignedUserId = prod.editorId;
+          }
+          task.updatedAt = new Date().toISOString();
+        }
+      }
+    }
+
+    prod.updatedAt = new Date().toISOString();
+    return prod;
+  });
+
+  const performer: User = user || {
+    id: 'sys_admin',
+    name: 'System',
+    role: 'ADMIN',
+    email: 'admin@system.local',
+    jobFunction: 'OTHER',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+
+  await logAudit(
+    productionId,
+    performer,
+    'MODIFY_PRODUCTION',
+    `${performer.name} modified scheduled production details for "${updatedProd.title}".`
+  );
+
+  return updatedProd;
+}
+

@@ -22,6 +22,7 @@ import {
   deleteTask,
   reassignProductionEditor,
   rescheduleProductionFilming,
+  modifyScheduledProduction,
 } from '../lib/workflow';
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
@@ -2163,13 +2164,158 @@ try {
   console.error('✗ Test 31 Failed', err);
 }
 
+// ----------------------------------------------------
+// TEST 32: Modify Scheduled Production (Schedule, Deadlines, Personnel & Studio Conflict)
+// ----------------------------------------------------
+console.log('Running Test 32: Modify Scheduled Production (Schedule, Deadlines, Personnel & Studio Conflict)...');
+try {
+  // 1. Create initial episode
+  const initialEp = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '701',
+      filmingDate: '2026-11-10',
+      filmingTime: '10:00 - 11:30',
+      editingDate: '2026-11-11',
+      editingDeadline: '2026-11-13',
+      publicationDeadline: '2026-11-14',
+      location: 'IN_STUDIO',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+
+  // 2. Direct workflow call: modifyScheduledProduction
+  const modifiedEp = await modifyScheduledProduction(
+    initialEp.id,
+    {
+      filmingDate: '2026-11-12',
+      filmingTime: '13:00 - 14:30',
+      editingDate: '2026-11-15',
+      editingDeadline: '2026-11-17',
+      publicationDeadline: '2026-11-18',
+      priority: 'URGENT',
+      episodeNumber: '702',
+    },
+    producerUser
+  );
+
+  assert.strictEqual(modifiedEp.filmingDate, '2026-11-12', 'Filming date should be updated');
+  assert.strictEqual(modifiedEp.filmingTime, '13:00 - 14:30', 'Filming time should be updated');
+  assert.strictEqual(modifiedEp.editingDate, '2026-11-15', 'Editing date should be updated');
+  assert.strictEqual(modifiedEp.editingDeadline, '2026-11-17', 'Editing deadline should be updated');
+  assert.strictEqual(modifiedEp.publicationDeadline, '2026-11-18', 'Publication deadline should be updated');
+  assert.strictEqual(modifiedEp.priority, 'URGENT', 'Priority should be updated');
+  assert.strictEqual(modifiedEp.episodeNumber, '702', 'Episode number should be updated');
+  assert(modifiedEp.title.includes('702'), 'Title should reflect updated episode number');
+
+  // Verify task synchronization
+  const filmingTask = modifiedEp.tasks.find((t) => t.stageName === 'FILMING' || t.title.toLowerCase().includes('filming'));
+  assert(filmingTask, 'Filming task should exist');
+  assert.strictEqual(filmingTask.dueDate, '2026-11-12', 'Filming task dueDate should sync with filmingDate');
+  assert.strictEqual(filmingTask.dueTime, '13:00', 'Filming task dueTime should sync with filming start time');
+
+  const editingTask = modifiedEp.tasks.find((t) => t.stageName === 'EDITING' || t.title.toLowerCase().includes('edit'));
+  if (editingTask) {
+    assert.strictEqual(editingTask.dueDate, '2026-11-15', 'Editing task dueDate should sync with editingDate');
+  }
+
+  // 3. API endpoint call: PATCH /api/productions/[id] with action: 'MODIFY_PRODUCTION'
+  const patchReq = new NextRequest(`http://localhost:3000/api/productions/${initialEp.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'MODIFY_PRODUCTION',
+      updates: {
+        filmingDate: '2026-11-14',
+        filmingTime: '15:00 - 16:30',
+        priority: 'HIGH',
+      },
+    }),
+  });
+
+  const patchRes = await patchProduction(patchReq, { params: { id: initialEp.id } });
+  assert.strictEqual(patchRes.status, 200, 'PATCH /api/productions/[id] with MODIFY_PRODUCTION must return 200');
+  const patchData = await patchRes.json();
+  assert.strictEqual(patchData.production.filmingDate, '2026-11-14');
+  assert.strictEqual(patchData.production.filmingTime, '15:00 - 16:30');
+  assert.strictEqual(patchData.production.priority, 'HIGH');
+
+  // 4. Physical Studio Double-Booking Prevention during Modify
+  // Create another studio shoot on 2026-11-20 from 10:00 - 12:00
+  const existingShoot = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '703',
+      filmingDate: '2026-11-20',
+      filmingTime: '10:00 - 12:00',
+      location: 'IN_STUDIO',
+      priority: 'NORMAL',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+
+  // Attempt to modify initialEp into overlapping studio time: 2026-11-20 11:00 - 13:00
+  const conflictReq = new NextRequest(`http://localhost:3000/api/productions/${initialEp.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'MODIFY_PRODUCTION',
+      updates: {
+        filmingDate: '2026-11-20',
+        filmingTime: '11:00 - 13:00',
+        location: 'IN_STUDIO',
+      },
+    }),
+  });
+  const conflictRes = await patchProduction(conflictReq, { params: { id: initialEp.id } });
+  assert.strictEqual(conflictRes.status, 400, 'Conflicting studio modification must return 400');
+  const conflictData = await conflictRes.json();
+  assert(
+    conflictData.error.includes('Studio Double-Booking Conflict'),
+    `Expected studio conflict error, got: ${conflictData.error}`
+  );
+
+  // 5. Permission Check: Editor without producer rights cannot modify scheduled production
+  const unauthorizedReq = new NextRequest(`http://localhost:3000/api/productions/${initialEp.id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'MODIFY_PRODUCTION',
+      updates: {
+        priority: 'NORMAL',
+      },
+    }),
+  });
+  const unauthorizedRes = await patchProduction(unauthorizedReq, { params: { id: initialEp.id } });
+  assert.strictEqual(unauthorizedRes.status, 403, 'Unauthorized user must receive 403 Forbidden');
+
+  console.log('✓ Test 32 Passed: Modify Scheduled Production (Schedule, Deadlines, Personnel & Studio Conflict) verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 32 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 31 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 32 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 31) {
+if (testsPassed !== 32) {
   process.exit(1);
 }

@@ -14,6 +14,7 @@ import {
   deleteProduction,
   reassignProductionEditor,
   rescheduleProductionFilming,
+  modifyScheduledProduction,
 } from '@/lib/workflow';
 
 type RouteContext = { params: Promise<{ id: string }> | { id: string } };
@@ -119,13 +120,18 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         );
         break;
 
+      case 'MODIFY_PRODUCTION':
+        updated = await modifyScheduledProduction(id, payload || body.updates || body, user);
+        break;
+
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
     return NextResponse.json({ success: true, production: updated });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Action failed' }, { status: 400 });
+    const status = err.message?.includes('Unauthorized') || err.message?.includes('Forbidden') ? 403 : 400;
+    return NextResponse.json({ error: err.message || 'Action failed' }, { status });
   }
 }
 

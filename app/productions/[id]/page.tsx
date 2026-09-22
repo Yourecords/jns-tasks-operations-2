@@ -29,6 +29,7 @@ import {
   Lock,
   Car,
   Play,
+  Edit3,
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, ProductionTask, Comment, AuditLog, RevisionCycle } from '@/lib/types';
@@ -37,6 +38,7 @@ import WorkflowBreadcrumb from '@/components/WorkflowBreadcrumb';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
 import VideoPreviewModal from '@/components/VideoPreviewModal';
+import ModifyProductionModal from '@/components/ModifyProductionModal';
 
 export default function ProductionDetailPage() {
   const params = useParams();
@@ -48,6 +50,9 @@ export default function ProductionDetailPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modify production modal state
+  const [modifyModalOpen, setModifyModalOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -452,6 +457,26 @@ export default function ProductionDetailPage() {
                 <Car size={13} />
                 <span>Guest Taxi (Gett)</span>
               </Link>
+            )}
+            {isProducerOrAdmin && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setModifyModalOpen(true)}
+                title="Modify this scheduled production"
+                style={{
+                  borderColor: 'rgba(59, 130, 246, 0.4)',
+                  color: '#60a5fa',
+                  backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontWeight: 600,
+                }}
+              >
+                <Edit3 size={13} />
+                <span>Modify Production</span>
+              </button>
             )}
             {isProducerOrAdmin && (
               <button
@@ -1944,6 +1969,19 @@ export default function ProductionDetailPage() {
           }}
           onSuccess={() => {
             fetchDetails();
+          }}
+        />
+      )}
+
+      {modifyModalOpen && production && (
+        <ModifyProductionModal
+          isOpen={modifyModalOpen}
+          onClose={() => setModifyModalOpen(false)}
+          production={production}
+          onSuccess={() => {
+            fetchDetails();
+            setSuccessMsg('Production modified successfully.');
+            setTimeout(() => setSuccessMsg(''), 4000);
           }}
         />
       )}
