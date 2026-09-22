@@ -1908,13 +1908,92 @@ try {
   console.error('✗ Test 28 Failed', err);
 }
 
+// ----------------------------------------------------
+// TEST 29: Production Scheduling Editing Shift Date & Calendar Reflection
+// ----------------------------------------------------
+console.log('Running Test 29: Production Scheduling Editing Shift Date & Calendar Reflection...');
+try {
+  // 1. Create Episode with filming date on 2026-10-10 and editing date on 2026-10-12 (different day)
+  const shiftEp = await createNewEpisode(
+    {
+      showId: 'show_the_quad',
+      episodeNumber: '890',
+      filmingDate: '2026-10-10',
+      filmingTime: '14:00 - 15:30',
+      editingDate: '2026-10-12',
+      editingDeadline: '2026-10-14',
+      publicationDeadline: '2026-10-15',
+      priority: 'HIGH',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+
+  assert.strictEqual(shiftEp.filmingDate, '2026-10-10');
+  assert.strictEqual(shiftEp.editingDate, '2026-10-12', 'Editing date must be explicitly stored as 2026-10-12');
+
+  // Verify calendar shift queue logic:
+  // Tasks on shift date
+  const editorTasksOnFilmingDay = [shiftEp].filter((p) => {
+    const isAssigned = p.editorId === editorUser.id;
+    if (!isAssigned) return false;
+    if (p.editingDate) return p.editingDate === '2026-10-10';
+    return p.filmingDate === '2026-10-10';
+  });
+  assert.strictEqual(editorTasksOnFilmingDay.length, 0, 'Shift task must NOT appear in editor shift queue on filming date when editing date is different');
+
+  const editorTasksOnEditingDay = [shiftEp].filter((p) => {
+    const isAssigned = p.editorId === editorUser.id;
+    if (!isAssigned) return false;
+    if (p.editingDate) return p.editingDate === '2026-10-12';
+    return p.filmingDate === '2026-10-12';
+  });
+  assert.strictEqual(editorTasksOnEditingDay.length, 1, 'Shift task MUST appear in editor shift queue on specified editing date');
+
+  // 2. Create Pilot with explicit editing shift date
+  const shiftPilot = await createNewPilot(
+    {
+      title: 'Jerusalem Insights Pilot',
+      conceptSummary: 'In-depth interviews from Jerusalem',
+      filmingDate: '2026-10-15',
+      filmingTime: '09:00 - 10:30',
+      editingDate: '2026-10-16',
+      editingDeadline: '2026-10-18',
+      priority: 'URGENT',
+      producerId: producerUser.id,
+      editorId: editorUser.id,
+    },
+    producerUser
+  );
+  assert.strictEqual(shiftPilot.filmingDate, '2026-10-15');
+  assert.strictEqual(shiftPilot.editingDate, '2026-10-16', 'Pilot editing date must be 2026-10-16');
+
+  // 3. Complete filming, file upload, and producer package stages to enter EDITING
+  await completeFilmingStage(shiftEp.id, studioUser);
+  await completeFileUploadStage(shiftEp.id, { dropboxPath: '/JNS_RAW/Shift_890' }, editorUser);
+  const afterPackage = await completeProducerPackageStage(
+    shiftEp.id,
+    { editingNotes: 'Ready for Monday edit shift' },
+    producerUser
+  );
+  const editTask = afterPackage.tasks.find((t) => t.stageName === 'EDITING' && t.title === 'Edit Draft 1');
+  assert(editTask, 'Editing draft task must be created');
+  assert.strictEqual(editTask.dueDate, '2026-10-12', 'Editing draft task dueDate must match the scheduled editing date');
+
+  console.log('✓ Test 29 Passed: Production Scheduling Editing Shift Date & Calendar Reflection verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 29 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 28 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 29 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 28) {
+if (testsPassed !== 29) {
   process.exit(1);
 }

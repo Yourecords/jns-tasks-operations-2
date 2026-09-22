@@ -429,8 +429,10 @@ export default function ProductionCalendarPage() {
       if (!isAssignedEditor) return false;
 
       // Matches shift date:
-      if (p.editingDate === dateString) return true;
-      if (!p.editingDate && p.filmingDate === dateString) return true;
+      if (p.editingDate) {
+        return p.editingDate === dateString;
+      }
+      if (p.filmingDate === dateString) return true;
       if (p.tasks && p.tasks.some((t) => t.assignedUserId === editorId && t.dueDate === dateString)) return true;
 
       return false;
@@ -1412,6 +1414,11 @@ export default function ProductionCalendarPage() {
                                             <span style={{ color: '#38bdf8', fontWeight: 700 }}>+ Remote</span>
                                           )}
                                         </div>
+                                        {p.editingDate && p.editingDate !== p.filmingDate && (
+                                          <div style={{ marginTop: '3px', fontSize: '9px', fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            <span>✂️ Edit: {p.editingDate}</span>
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   })
@@ -1530,8 +1537,11 @@ export default function ProductionCalendarPage() {
                                             {p.title}
                                           </div>
                                         </div>
-                                        <div style={{ fontSize: '9.5px', color: '#6ee7b7', marginTop: '4px' }}>
-                                          {getUserName(p.producerId)}
+                                        <div style={{ fontSize: '9.5px', color: '#6ee7b7', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span>{getUserName(p.producerId)}</span>
+                                          {p.editingDate && p.editingDate !== p.filmingDate && (
+                                            <span style={{ fontSize: '9px', fontWeight: 700, color: '#c084fc' }}>✂️ Edit: {p.editingDate}</span>
+                                          )}
                                         </div>
                                       </div>
                                     );
@@ -1765,6 +1775,18 @@ export default function ProductionCalendarPage() {
                                                   Shift
                                                 </span>
                                               </div>
+                                              {p.filmingDate && p.filmingDate !== p.editingDate && (
+                                                <div
+                                                  style={{
+                                                    marginTop: '4px',
+                                                    fontSize: '8.5px',
+                                                    color: 'rgba(255, 255, 255, 0.65)',
+                                                    fontWeight: 600,
+                                                  }}
+                                                >
+                                                  🎬 Filmed: {p.filmingDate}
+                                                </div>
+                                              )}
                                             </div>
                                           );
                                         })}
@@ -2534,12 +2556,17 @@ export default function ProductionCalendarPage() {
                                               {p.title}
                                             </div>
                                           </div>
-                                          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <span>Prod: {getUserName(p.producerId)}</span>
                                             {p.editorId && (
                                               <span style={{ color: '#c084fc' }}>Ed: {getUserName(p.editorId)}</span>
                                             )}
                                           </div>
+                                          {p.editingDate && p.editingDate !== p.filmingDate && (
+                                            <div style={{ marginTop: '4px', fontSize: '9.5px', fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                              <span>✂️ Edit: {p.editingDate}</span>
+                                            </div>
+                                          )}
                                         </div>
                                       );
                                     })
@@ -2637,12 +2664,17 @@ export default function ProductionCalendarPage() {
                                               {p.title}
                                             </div>
                                           </div>
-                                          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <span>Prod: {getUserName(p.producerId)}</span>
                                             {p.editorId && (
                                               <span style={{ color: '#c084fc' }}>Ed: {getUserName(p.editorId)}</span>
                                             )}
                                           </div>
+                                          {p.editingDate && p.editingDate !== p.filmingDate && (
+                                            <div style={{ marginTop: '4px', fontSize: '9.5px', fontWeight: 700, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                              <span>✂️ Edit: {p.editingDate}</span>
+                                            </div>
+                                          )}
                                         </div>
                                       );
                                     })
@@ -2823,6 +2855,11 @@ export default function ProductionCalendarPage() {
                                                 <ExternalLink size={10} />
                                               </button>
                                             </div>
+                                            {p.filmingDate && p.filmingDate !== p.editingDate && (
+                                              <div style={{ marginTop: '4px', fontSize: '9.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                🎬 Filmed: {p.filmingDate}
+                                              </div>
+                                            )}
                                           </div>
                                         );
                                       })}
@@ -3569,9 +3606,14 @@ export default function ProductionCalendarPage() {
                         <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>
                           {p.editorId ? getUserName(p.editorId) : 'Unassigned Editor'}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#e879f9', fontWeight: 700 }}>
-                          Shift Queue: {p.currentStage}
+                        <div style={{ fontSize: '12px', color: '#e879f9', fontWeight: 700, marginTop: '3px' }}>
+                          ✂️ Editing Shift: {p.editingDate || p.filmingDate || 'Unscheduled'}
                         </div>
+                        {p.editingDeadline && (
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            🎯 Deadline: {p.editingDeadline}
+                          </div>
+                        )}
                       </div>
                     </div>
 

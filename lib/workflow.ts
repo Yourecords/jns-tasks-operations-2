@@ -213,6 +213,8 @@ export async function createNewEpisode(
       ? 'FULLY_REMOTE'
       : 'IN_STUDIO';
 
+  const resolvedEditingDate = data.editingDate || data.filmingDate;
+
   const newProd: Production = {
     id: prodId,
     type: 'EPISODE',
@@ -226,7 +228,7 @@ export async function createNewEpisode(
     filmingTime: data.filmingTime,
     location,
     recordingType: resolvedRecordingType,
-    editingDate: data.editingDate,
+    editingDate: resolvedEditingDate,
     editingTime: data.editingTime,
     editingDeadline: data.editingDeadline,
     publicationDeadline: data.publicationDeadline,
@@ -246,7 +248,7 @@ export async function createNewEpisode(
   await createNotification(
     assignedProducer,
     'New Episode Scheduled',
-    `You are assigned as producer for ${title}. Filming on ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}.`,
+    `You are assigned as producer for ${title}. Filming on ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}. Editing scheduled for ${resolvedEditingDate}.`,
     `/productions/${prodId}`,
     'TASK_ASSIGNED',
     [
@@ -254,6 +256,7 @@ export async function createNewEpisode(
       { label: 'Episode', value: `Episode ${data.episodeNumber}` },
       { label: 'Filming Date', value: data.filmingDate },
       ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
+      { label: 'Editing Date', value: resolvedEditingDate },
       { label: 'Editing Deadline', value: data.editingDeadline || 'Standard turnaround' },
       { label: 'Priority', value: data.priority },
     ]
@@ -262,7 +265,7 @@ export async function createNewEpisode(
     await createNotification(
       assignedEditor,
       'New Episode Assigned for Editing',
-      `You are the assigned editor for ${title}. Filming is scheduled for ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}.`,
+      `You are the assigned editor for ${title}. Filming is scheduled for ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}. Editing shift is scheduled for ${resolvedEditingDate}.`,
       `/productions/${prodId}`,
       'TASK_ASSIGNED',
       [
@@ -270,6 +273,7 @@ export async function createNewEpisode(
         { label: 'Episode', value: `Episode ${data.episodeNumber}` },
         { label: 'Filming Date', value: data.filmingDate },
         ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
+        { label: 'Editing Date', value: resolvedEditingDate },
         { label: 'Editing Deadline', value: data.editingDeadline || 'Standard turnaround' },
       ]
     );
@@ -333,6 +337,8 @@ export async function createNewPilot(
       ? 'FULLY_REMOTE'
       : 'IN_STUDIO';
 
+  const resolvedEditingDate = data.editingDate || data.filmingDate;
+
   const newPilot: Production = {
     id: prodId,
     type: 'PILOT',
@@ -344,7 +350,7 @@ export async function createNewPilot(
     filmingTime: data.filmingTime,
     location,
     recordingType: resolvedRecordingType,
-    editingDate: data.editingDate,
+    editingDate: resolvedEditingDate,
     editingTime: data.editingTime,
     editingDeadline: data.editingDeadline,
     publicationDeadline: data.publicationDeadline,
@@ -369,7 +375,7 @@ export async function createNewPilot(
   await createNotification(
     data.producerId,
     'New Pilot Assigned',
-    `You are assigned as producer for pilot "${data.title}". Filming scheduled on ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}.`,
+    `You are assigned as producer for pilot "${data.title}". Filming scheduled on ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}. Editing scheduled for ${resolvedEditingDate}.`,
     `/productions/${prodId}`,
     'TASK_ASSIGNED',
     [
@@ -377,6 +383,7 @@ export async function createNewPilot(
       { label: 'Concept Summary', value: data.conceptSummary },
       { label: 'Filming Date', value: data.filmingDate },
       ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
+      { label: 'Editing Date', value: resolvedEditingDate },
       { label: 'Editing Deadline', value: data.editingDeadline || 'TBD' },
     ]
   );
@@ -384,13 +391,15 @@ export async function createNewPilot(
     await createNotification(
       data.editorId,
       'Pilot Editor Assignment',
-      `You are designated editor for pilot "${data.title}".`,
+      `You are designated editor for pilot "${data.title}". Filming is scheduled for ${data.filmingDate}${data.filmingTime ? ` at ${data.filmingTime}` : ''}. Editing shift is scheduled for ${resolvedEditingDate}.`,
       `/productions/${prodId}`,
       'TASK_ASSIGNED',
       [
         { label: 'Pilot Title', value: data.title },
         { label: 'Filming Date', value: data.filmingDate },
         ...(data.filmingTime ? [{ label: 'Filming Time', value: data.filmingTime }] : []),
+        { label: 'Editing Date', value: resolvedEditingDate },
+        { label: 'Editing Deadline', value: data.editingDeadline || 'TBD' },
       ]
     );
   }
@@ -746,7 +755,7 @@ export async function completeProducerPackageStage(
       assignedUserId: assignedEditor,
       status: 'IN_PROGRESS',
       priority: prod.priority,
-      dueDate: prod.editingDeadline || new Date().toISOString().split('T')[0],
+      dueDate: prod.editingDate || prod.editingDeadline || new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

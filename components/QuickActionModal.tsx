@@ -53,6 +53,14 @@ function calculateDurationDisplay(startTime: string, endTime: string): string {
   return `${h}h ${m}m`;
 }
 
+function addDaysToDateStr(dateStr: string, daysToAdd: number): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+  d.setDate(d.getDate() + daysToAdd);
+  return d.toISOString().split('T')[0];
+}
+
 interface QuickActionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -83,6 +91,7 @@ export default function QuickActionModal({
   const [epFilmingEndTime, setEpFilmingEndTime] = useState('11:30');
   const epFilmingTime = epFilmingEndTime ? `${epFilmingStartTime} - ${epFilmingEndTime}` : epFilmingStartTime;
   const [epLocation, setEpLocation] = useState<'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE'>('IN_STUDIO');
+  const [epEditingDate, setEpEditingDate] = useState('');
   const [epEditingDeadline, setEpEditingDeadline] = useState('');
   const [epPubDeadline, setEpPubDeadline] = useState('');
   const [epPriority, setEpPriority] = useState('NORMAL');
@@ -97,6 +106,7 @@ export default function QuickActionModal({
   const [pilotFilmingEndTime, setPilotFilmingEndTime] = useState('11:30');
   const pilotFilmingTime = pilotFilmingEndTime ? `${pilotFilmingStartTime} - ${pilotFilmingEndTime}` : pilotFilmingStartTime;
   const [pilotLocation, setPilotLocation] = useState<'IN_STUDIO' | 'STUDIO_REMOTE_GUEST' | 'FULLY_REMOTE'>('IN_STUDIO');
+  const [pilotEditingDate, setPilotEditingDate] = useState('');
   const [pilotPriority, setPilotPriority] = useState('NORMAL');
   const [pilotProducerId, setPilotProducerId] = useState('');
   const [pilotEditorId, setPilotEditorId] = useState('');
@@ -308,6 +318,7 @@ export default function QuickActionModal({
           filmingTime: epFilmingTime || undefined,
           location: epLocation,
           recordingType: epLocation,
+          editingDate: epEditingDate || epFilmingDate,
           editingDeadline: epEditingDeadline || undefined,
           publicationDeadline: epPubDeadline || undefined,
           priority: epPriority,
@@ -349,6 +360,7 @@ export default function QuickActionModal({
           filmingTime: pilotFilmingTime || undefined,
           location: pilotLocation,
           recordingType: pilotLocation,
+          editingDate: pilotEditingDate || pilotFilmingDate,
           priority: pilotPriority,
           producerId: pilotProducerId,
           editorId: pilotEditorId || undefined,
@@ -781,7 +793,8 @@ export default function QuickActionModal({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
+              {/* Filming Details Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr 1.2fr', gap: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">
                     Filming Date <span className="req">*</span>
@@ -790,12 +803,18 @@ export default function QuickActionModal({
                     type="date"
                     className="form-input"
                     value={epFilmingDate}
-                    onChange={(e) => setEpFilmingDate(e.target.value)}
+                    onChange={(e) => {
+                      const newFilmDate = e.target.value;
+                      setEpFilmingDate(newFilmDate);
+                      if (!epEditingDate || epEditingDate === epFilmingDate) {
+                        setEpEditingDate(newFilmDate);
+                      }
+                    }}
                     required
                   />
                 </div>
 
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <div className="form-group">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                     <label className="form-label" style={{ marginBottom: 0 }}>
                       Filming Schedule (Start & End Time) <span className="req">*</span>
@@ -874,15 +893,62 @@ export default function QuickActionModal({
                     <option value="FULLY_REMOTE">Fully remote recording</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Post-Production & Delivery Schedule Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: '0.75rem', marginTop: '0.25rem' }}>
+                {/* Editing Shift Date (When editing is done) */}
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>
+                      Editing Date (When editing is done) <span className="req">*</span>
+                    </label>
+                    <span style={{ fontSize: '10.5px', color: '#c084fc', fontWeight: 700 }}>
+                      ✂️ Calendar Shift Queue
+                    </span>
+                  </div>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={epEditingDate || epFilmingDate}
+                    onChange={(e) => setEpEditingDate(e.target.value)}
+                    required
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Quick Shift:</span>
+                    {[
+                      { label: 'Same day', days: 0 },
+                      { label: '+1 day', days: 1 },
+                      { label: '+2 days', days: 2 },
+                      { label: '+3 days', days: 3 },
+                    ].map((btn) => (
+                      <button
+                        key={btn.label}
+                        type="button"
+                        onClick={() => setEpEditingDate(addDaysToDateStr(epFilmingDate, btn.days))}
+                        className="btn btn-secondary btn-xs"
+                        style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px' }}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Date editor works on this episode in calendar (distinct from deadline)
+                  </div>
+                </div>
 
                 <div className="form-group">
-                  <label className="form-label">Editing Deadline</label>
+                  <label className="form-label">Editing Deadline (Review)</label>
                   <input
                     type="date"
                     className="form-input"
                     value={epEditingDeadline}
                     onChange={(e) => setEpEditingDeadline(e.target.value)}
                   />
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    When rough cut is due for review
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -893,6 +959,9 @@ export default function QuickActionModal({
                     value={epPubDeadline}
                     onChange={(e) => setEpPubDeadline(e.target.value)}
                   />
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Scheduled air / publish date
+                  </div>
                 </div>
               </div>
 
@@ -1015,7 +1084,7 @@ export default function QuickActionModal({
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr 1.2fr', gap: '0.75rem' }}>
                 <div className="form-group">
                   <label className="form-label">
                     Filming Date <span className="req">*</span>
@@ -1024,12 +1093,18 @@ export default function QuickActionModal({
                     type="date"
                     className="form-input"
                     value={pilotFilmingDate}
-                    onChange={(e) => setPilotFilmingDate(e.target.value)}
+                    onChange={(e) => {
+                      const newFilmDate = e.target.value;
+                      setPilotFilmingDate(newFilmDate);
+                      if (!pilotEditingDate || pilotEditingDate === pilotFilmingDate) {
+                        setPilotEditingDate(newFilmDate);
+                      }
+                    }}
                     required
                   />
                 </div>
 
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <div className="form-group">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                     <label className="form-label" style={{ marginBottom: 0 }}>
                       Filming Schedule (Start & End Time) <span className="req">*</span>
@@ -1107,6 +1182,47 @@ export default function QuickActionModal({
                     <option value="STUDIO_REMOTE_GUEST">Studio + remote interviewee</option>
                     <option value="FULLY_REMOTE">Fully remote recording</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Pilot Editing Shift Schedule */}
+              <div className="form-group" style={{ marginTop: '0.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>
+                    Editing Date (When editing is done) <span className="req">*</span>
+                  </label>
+                  <span style={{ fontSize: '10.5px', color: '#c084fc', fontWeight: 700 }}>
+                    ✂️ Calendar Shift Queue
+                  </span>
+                </div>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={pilotEditingDate || pilotFilmingDate}
+                  onChange={(e) => setPilotEditingDate(e.target.value)}
+                  required
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Quick Shift:</span>
+                  {[
+                    { label: 'Same day', days: 0 },
+                    { label: '+1 day', days: 1 },
+                    { label: '+2 days', days: 2 },
+                    { label: '+3 days', days: 3 },
+                  ].map((btn) => (
+                    <button
+                      key={btn.label}
+                      type="button"
+                      onClick={() => setPilotEditingDate(addDaysToDateStr(pilotFilmingDate, btn.days))}
+                      className="btn btn-secondary btn-xs"
+                      style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px' }}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                  Date editor works on this pilot in calendar (distinct from deadline)
                 </div>
               </div>
 

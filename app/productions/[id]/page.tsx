@@ -521,6 +521,15 @@ export default function ProductionDetailPage() {
 
         <div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+            Editing Shift Date
+          </div>
+          <div style={{ fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>
+            {production.editingDate || production.filmingDate || 'N/A'}{production.editingTime ? ` • ${production.editingTime}` : ''}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
             Editing Deadline
           </div>
           <div style={{ fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>
