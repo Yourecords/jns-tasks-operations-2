@@ -87,6 +87,8 @@ export default function MediaPage() {
   const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [albumCovers, setAlbumCovers] = useState<Record<string, { count: number; coverId?: string }>>({});
+  const [isDraggingOverAlbum, setIsDraggingOverAlbum] = useState(false);
+  const [isDraggingOverSection, setIsDraggingOverSection] = useState(false);
 
   // Admin view toggle: 'album' vs 'admin'
   const [viewMode, setViewMode] = useState<'album' | 'admin'>('album');
@@ -1203,16 +1205,83 @@ export default function MediaPage() {
       {/* ========================================================================= */}
       {activeAlbum ? (
         <section
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDraggingOverSection(true);
+          }}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            setIsDraggingOverSection(true);
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+            setIsDraggingOverSection(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDraggingOverSection(false);
+            setIsDraggingOverAlbum(false);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              void uploadToCurrentAlbum(e.dataTransfer.files);
+            }
+          }}
           style={{
             backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-medium)',
+            border: isDraggingOverSection
+              ? '2px dashed var(--jns-gold)'
+              : '1px solid var(--border-medium)',
             borderRadius: 14,
             padding: 24,
-            boxShadow: 'var(--shadow-md)',
+            boxShadow: isDraggingOverSection
+              ? '0 0 24px rgba(229, 169, 60, 0.25), var(--shadow-md)'
+              : 'var(--shadow-md)',
             display: 'grid',
             gap: 20,
+            position: 'relative',
+            transition: 'border-color 0.2s, box-shadow 0.2s',
           }}
         >
+          {/* Section Drag Overlay */}
+          {isDraggingOverSection && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 14,
+                backgroundColor: 'rgba(9, 14, 24, 0.92)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 40,
+                pointerEvents: 'none',
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: 14,
+                  backgroundColor: 'rgba(229, 169, 60, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--jns-gold)',
+                }}
+              >
+                <UploadCloud size={32} />
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', margin: 0 }}>
+                Drop files to upload to &ldquo;{activeAlbum.name}&rdquo;
+              </h3>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                Release to upload directly into this album
+              </p>
+            </div>
+          )}
+
           {/* Active Album Bar */}
           <div
             style={{
@@ -1445,25 +1514,107 @@ export default function MediaPage() {
             </div>
           ) : filteredFiles.length === 0 ? (
             <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingOverAlbum(true);
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                setIsDraggingOverAlbum(true);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setIsDraggingOverAlbum(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingOverAlbum(false);
+                setIsDraggingOverSection(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  void uploadToCurrentAlbum(e.dataTransfer.files);
+                }
+              }}
               style={{
-                padding: '48px 20px',
+                padding: '52px 24px',
                 textAlign: 'center',
-                backgroundColor: 'var(--bg-card-subtle)',
-                border: '1px dashed var(--border-subtle)',
-                borderRadius: 12,
+                backgroundColor: isDraggingOverAlbum
+                  ? 'rgba(229, 169, 60, 0.08)'
+                  : 'var(--bg-card-subtle)',
+                border: isDraggingOverAlbum
+                  ? '2px dashed var(--jns-gold)'
+                  : '2px dashed var(--border-medium)',
+                borderRadius: 14,
+                transition: 'all 0.2s ease',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                boxShadow: isDraggingOverAlbum ? '0 0 24px rgba(229, 169, 60, 0.2)' : 'none',
               }}
             >
-              <ImageIcon size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-              <h4 style={{ fontSize: 15, color: 'var(--text-main)', margin: '0 0 6px 0' }}>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 12,
+                  backgroundColor: isDraggingOverAlbum
+                    ? 'rgba(229, 169, 60, 0.2)'
+                    : 'rgba(229, 169, 60, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--jns-gold)',
+                  marginBottom: 10,
+                  transform: isDraggingOverAlbum ? 'scale(1.1)' : 'none',
+                  transition: 'transform 0.2s ease',
+                }}
+              >
+                {isDraggingOverAlbum ? <UploadCloud size={28} /> : <ImageIcon size={28} />}
+              </div>
+
+              <h4 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-main)', margin: '0 0 4px 0' }}>
                 {searchQuery || typeFilter !== 'ALL'
                   ? 'No matching files found'
+                  : isDraggingOverAlbum
+                  ? 'Drop your files here to upload'
                   : 'This Album is Empty'}
               </h4>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 16px 0' }}>
+
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 16px 0', maxWidth: 480, lineHeight: 1.5 }}>
                 {searchQuery || typeFilter !== 'ALL'
                   ? 'Try clearing your search query or switching filters.'
-                  : 'Add team photos, stills, or video clips by clicking "Add Media to Album" above.'}
+                  : 'Add team photos, stills, or video clips by dragging and dropping media files directly into this album, or clicking "Add Media to Album" above.'}
               </p>
+
+              {!searchQuery && typeFilter === 'ALL' && (
+                <label
+                  className="btn btn-primary btn-sm"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12,
+                    padding: '8px 18px',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                    opacity: busy ? 0.7 : 1,
+                  }}
+                >
+                  <UploadCloud size={15} />
+                  <span>{busy ? 'Uploading…' : 'Drag Media Here or Click to Browse'}</span>
+                  <input
+                    type="file"
+                    multiple
+                    disabled={busy}
+                    onChange={(e) => {
+                      void uploadToCurrentAlbum(e.target.files);
+                      e.target.value = '';
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              )}
             </div>
           ) : (
             <div
