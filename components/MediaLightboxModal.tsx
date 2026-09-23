@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   X,
   Download,
+  Trash2,
   ChevronLeft,
   ChevronRight,
   ZoomIn,
@@ -29,6 +30,8 @@ interface MediaLightboxModalProps {
   file: MediaItem | null;
   files?: MediaItem[];
   onSelectFile?: (file: MediaItem) => void;
+  isAdmin?: boolean;
+  onDelete?: (file: MediaItem) => void | Promise<void>;
 }
 
 export default function MediaLightboxModal({
@@ -37,6 +40,8 @@ export default function MediaLightboxModal({
   file,
   files = [],
   onSelectFile,
+  isAdmin = false,
+  onDelete,
 }: MediaLightboxModalProps) {
   const [zoomed, setZoomed] = useState(false);
 
@@ -231,6 +236,35 @@ export default function MediaLightboxModal({
             <Download size={16} />
             <span>Download original</span>
           </a>
+
+          {isAdmin && onDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Are you sure you want to remove "${file.name}"? This action will delete it permanently.`)) {
+                  void onDelete(file);
+                }
+              }}
+              title="Remove media item (Admin only)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                borderRadius: 6,
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                color: '#f87171',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              <Trash2 size={16} />
+              <span>Remove</span>
+            </button>
+          )}
 
           <button
             type="button"

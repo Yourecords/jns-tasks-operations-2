@@ -26,7 +26,10 @@ import {
   Pencil,
   X,
   Save,
+  Eye,
+  Download,
 } from 'lucide-react';
+import MediaLightboxModal, { MediaItem } from '@/components/MediaLightboxModal';
 import { useUser } from '@/components/UserContext';
 import {
   GraphicDesignTask,
@@ -57,6 +60,7 @@ export default function GraphicsHubPage() {
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+  const [lightboxFile, setLightboxFile] = useState<MediaItem | null>(null);
 
   // Inline subtask addition per task
   const [addingSubtaskTaskId, setAddingSubtaskTaskId] = useState<string | null>(null);
@@ -322,6 +326,22 @@ export default function GraphicsHubPage() {
           addedAt: new Date().toISOString(),
         }));
 
+      const existingMediaAssets = (editingTask.assets || []).filter(
+        (a) => a.mediaId || (a.url && a.url.startsWith('/api/media/')),
+      );
+      const existingMediaReferences = (editingTask.references || []).filter(
+        (r) => r.mediaId || (r.url && r.url.startsWith('/api/media/')),
+      );
+
+      const combinedAssets = [
+        ...existingMediaAssets,
+        ...parsedAssets.filter((a) => !existingMediaAssets.some((m) => m.url === a.url)),
+      ];
+      const combinedReferences = [
+        ...existingMediaReferences,
+        ...parsedReferences.filter((r) => !existingMediaReferences.some((m) => m.url === r.url)),
+      ];
+
       const res = await fetch(`/api/graphics/${editingTask.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -336,8 +356,8 @@ export default function GraphicsHubPage() {
           assignedUserId: editAssignedUserId,
           deliverableUrl: editDeliverableUrl.trim() || undefined,
           description: editDescription.trim(),
-          assets: parsedAssets,
-          references: parsedReferences,
+          assets: combinedAssets,
+          references: combinedReferences,
           subtasks: editSubtasks,
         }),
       });
@@ -873,47 +893,302 @@ export default function GraphicsHubPage() {
                 </div>
 
                 <Attachments kind="graphics" target={task.id} />
-                {/* Assets and References (Immediate Requests or Long-Term) */}
+                {/* Assets and References (Immediate Requests or Long-Term Projects) */}
                 {((task.assets && task.assets.length > 0) || (task.references && task.references.length > 0)) && (
                   <div
                     style={{
                       display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: '0.5rem',
-                      padding: '8px 12px',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      padding: '10px 14px',
                       backgroundColor: 'var(--bg-card-subtle)',
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       marginBottom: '0.85rem',
+                      border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    {task.assets?.map((ast, i) => (
-                      <a
-                        key={ast.id || i}
-                        href={ast.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '11.5px', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <FileText size={12} color="var(--jns-gold)" />
-                        <span>{ast.title || 'Asset Link'}</span>
-                        <ExternalLink size={10} />
-                      </a>
-                    ))}
+                    {/* Assets to Incorporate */}
+                    {task.assets && task.assets.length > 0 && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: 'var(--jns-gold)',
+                            textTransform: 'uppercase',
+                            marginBottom: '6px',
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          Assets to Incorporate ({task.assets.length})
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {task.assets.map((ast, i) => {
+                            const isMedia = Boolean(
+                              ast.mediaId || (ast.url && ast.url.startsWith('/api/media/')),
+                            );
+                            const mediaId =
+                              ast.mediaId ||
+                              (ast.url ? ast.url.split('/api/media/')[1]?.split('?')[0] : '');
+                            const isImage =
+                              ast.mime?.startsWith('image/') ||
+                              ast.title?.match(/\.(jpg|jpeg|png|webp|gif)$/i);
 
-                    {task.references?.map((ref, i) => (
-                      <a
-                        key={ref.id || i}
-                        href={ref.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontSize: '11.5px', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <ExternalLink size={12} color="#38bdf8" />
-                        <span>{ref.title || 'Reference Link'}</span>
-                      </a>
-                    ))}
+                            if (isMedia && mediaId) {
+                              return (
+                                <div
+                                  key={ast.id || i}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    backgroundColor: 'var(--bg-card)',
+                                    border: '1px solid var(--border-subtle)',
+                                    fontSize: '12px',
+                                  }}
+                                >
+                                  {isImage ? (
+                                    <img
+                                      src={`/api/media/${mediaId}`}
+                                      alt={ast.title}
+                                      style={{
+                                        width: '28px',
+                                        height: '28px',
+                                        objectFit: 'cover',
+                                        borderRadius: '4px',
+                                        backgroundColor: '#000',
+                                      }}
+                                    />
+                                  ) : (
+                                    <FileText size={18} color="var(--jns-gold)" />
+                                  )}
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        color: 'var(--text-main)',
+                                        maxWidth: '180px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                      title={ast.title}
+                                    >
+                                      {ast.title}
+                                    </span>
+                                    {ast.bytes && (
+                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                        {(ast.bytes / (1024 * 1024)).toFixed(2)} MB
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setLightboxFile({
+                                          id: mediaId,
+                                          name: ast.title,
+                                          mime: ast.mime || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+                                          bytes: ast.bytes || 0,
+                                        })
+                                      }
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ padding: '3px 7px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                      title="View media preview"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </button>
+                                    <a
+                                      href={`/api/media/${mediaId}?download=1`}
+                                      download
+                                      className="btn btn-primary btn-sm"
+                                      style={{
+                                        padding: '3px 7px',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        textDecoration: 'none',
+                                      }}
+                                      title="Download original file"
+                                    >
+                                      <Download size={12} />
+                                      <span>Download</span>
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <a
+                                key={ast.id || i}
+                                href={ast.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '11.5px',
+                                  padding: '4px 8px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <FileText size={12} color="var(--jns-gold)" />
+                                <span>{ast.title || 'Asset Link'}</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Visual References / Examples */}
+                    {task.references && task.references.length > 0 && (
+                      <div style={{ marginTop: task.assets && task.assets.length > 0 ? '4px' : '0' }}>
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#38bdf8',
+                            textTransform: 'uppercase',
+                            marginBottom: '6px',
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          Visual References ({task.references.length})
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {task.references.map((ref, i) => {
+                            const isMedia = Boolean(
+                              ref.mediaId || (ref.url && ref.url.startsWith('/api/media/')),
+                            );
+                            const mediaId =
+                              ref.mediaId ||
+                              (ref.url ? ref.url.split('/api/media/')[1]?.split('?')[0] : '');
+                            const isImage =
+                              ref.mime?.startsWith('image/') ||
+                              ref.title?.match(/\.(jpg|jpeg|png|webp|gif)$/i);
+
+                            if (isMedia && mediaId) {
+                              return (
+                                <div
+                                  key={ref.id || i}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    backgroundColor: 'var(--bg-card)',
+                                    border: '1px solid var(--border-subtle)',
+                                    fontSize: '12px',
+                                  }}
+                                >
+                                  {isImage ? (
+                                    <img
+                                      src={`/api/media/${mediaId}`}
+                                      alt={ref.title}
+                                      style={{
+                                        width: '28px',
+                                        height: '28px',
+                                        objectFit: 'cover',
+                                        borderRadius: '4px',
+                                        backgroundColor: '#000',
+                                      }}
+                                    />
+                                  ) : (
+                                    <FileText size={18} color="#38bdf8" />
+                                  )}
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        color: 'var(--text-main)',
+                                        maxWidth: '180px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                      title={ref.title}
+                                    >
+                                      {ref.title}
+                                    </span>
+                                    {ref.bytes && (
+                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                        {(ref.bytes / (1024 * 1024)).toFixed(2)} MB
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setLightboxFile({
+                                          id: mediaId,
+                                          name: ref.title,
+                                          mime: ref.mime || (isImage ? 'image/jpeg' : 'application/octet-stream'),
+                                          bytes: ref.bytes || 0,
+                                        })
+                                      }
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ padding: '3px 7px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                      title="View media preview"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </button>
+                                    <a
+                                      href={`/api/media/${mediaId}?download=1`}
+                                      download
+                                      className="btn btn-primary btn-sm"
+                                      style={{
+                                        padding: '3px 7px',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        textDecoration: 'none',
+                                      }}
+                                      title="Download original file"
+                                    >
+                                      <Download size={12} />
+                                      <span>Download</span>
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <a
+                                key={ref.id || i}
+                                href={ref.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-secondary btn-sm"
+                                style={{
+                                  fontSize: '11.5px',
+                                  padding: '4px 8px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <ExternalLink size={12} color="#38bdf8" />
+                                <span>{ref.title || 'Reference Link'}</span>
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1538,6 +1813,13 @@ export default function GraphicsHubPage() {
         onSuccess={() => {
           fetchTasks();
         }}
+      />
+
+      {/* Media Lightbox Modal for previewing graphic media assets */}
+      <MediaLightboxModal
+        isOpen={!!lightboxFile}
+        file={lightboxFile}
+        onClose={() => setLightboxFile(null)}
       />
     </div>
   );

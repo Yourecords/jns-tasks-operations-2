@@ -17,6 +17,8 @@ import {
   Trash2,
   Clock,
   Upload,
+  UploadCloud,
+  FileText,
   ExternalLink,
 } from 'lucide-react';
 import { useUser } from './UserContext';
@@ -180,6 +182,68 @@ export default function QuickActionModal({
   ]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newSubtaskStatus, setNewSubtaskStatus] = useState('NOT_STARTED');
+
+  // Graphics Media Uploads (target album: 'graphics media')
+  const [uploadedAssetFiles, setUploadedAssetFiles] = useState<
+    { id: string; name: string; sizeFormatted: string; url: string; mime?: string; bytes?: number }[]
+  >([]);
+  const [uploadedRefFiles, setUploadedRefFiles] = useState<
+    { id: string; name: string; sizeFormatted: string; url: string; mime?: string; bytes?: number }[]
+  >([]);
+  const [uploadingGfxMedia, setUploadingGfxMedia] = useState(false);
+  const [gfxUploadError, setGfxUploadError] = useState('');
+
+  const getGraphicsAlbumId = async (): Promise<string> => {
+    const res = await fetch('/api/media/albums?graphicsMedia=1');
+    const data = await res.json();
+    if (!res.ok || !data.album?.id) {
+      throw new Error(data.error || 'Failed to locate graphics media album');
+    }
+    return data.album.id;
+  };
+
+  const handleUploadGfxFiles = async (fileList: FileList | null, targetType: 'ASSET' | 'REFERENCE') => {
+    if (!fileList || fileList.length === 0) return;
+    setGfxUploadError('');
+    setUploadingGfxMedia(true);
+    try {
+      const albumId = await getGraphicsAlbumId();
+      const newItems: { id: string; name: string; sizeFormatted: string; url: string; mime?: string; bytes?: number }[] = [];
+
+      for (const file of Array.from(fileList)) {
+        const res = await fetch(
+          `/api/media?kind=album&target=${albumId}&name=${encodeURIComponent(file.name)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(`${file.name}: ${data.error || 'Upload failed'}`);
+
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+        newItems.push({
+          id: data.id,
+          name: file.name,
+          sizeFormatted: `${sizeMb} MB`,
+          url: `/api/media/${data.id}`,
+          mime: file.type,
+          bytes: file.size,
+        });
+      }
+
+      if (targetType === 'ASSET') {
+        setUploadedAssetFiles((prev) => [...prev, ...newItems]);
+      } else {
+        setUploadedRefFiles((prev) => [...prev, ...newItems]);
+      }
+    } catch (err: any) {
+      setGfxUploadError(err.message || 'Error uploading media file.');
+    } finally {
+      setUploadingGfxMedia(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -568,17 +632,53 @@ export default function QuickActionModal({
 
     setLoading(true);
     try {
-      const parsedAssets = gfxAssetsText
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((url, i) => ({ id: `ast_${Date.now()}_${i}`, title: `Asset ${i + 1}`, url }));
+      const parsedAssets = [
+        ...uploadedAssetFiles.map((f, i) => ({
+          id: f.id || `ast_${Date.now()}_${i}`,
+          title: f.name,
+          url: f.url,
+          mediaId: f.id,
+          mime: f.mime,
+          bytes: f.bytes,
+          type: 'ASSET' as const,
+          addedAt: new Date().toISOString(),
+        })),
+        ...gfxAssetsText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((url, i) => ({
+            id: `ast_${Date.now()}_${i}`,
+            title: `Asset ${i + 1}`,
+            url,
+            type: 'ASSET' as const,
+            addedAt: new Date().toISOString(),
+          })),
+      ];
 
-      const parsedReferences = gfxReferencesText
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((url, i) => ({ id: `ref_${Date.now()}_${i}`, title: `Reference ${i + 1}`, url }));
+      const parsedReferences = [
+        ...uploadedRefFiles.map((f, i) => ({
+          id: f.id || `ref_${Date.now()}_${i}`,
+          title: f.name,
+          url: f.url,
+          mediaId: f.id,
+          mime: f.mime,
+          bytes: f.bytes,
+          type: 'REFERENCE' as const,
+          addedAt: new Date().toISOString(),
+        })),
+        ...gfxReferencesText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((url, i) => ({
+            id: `ref_${Date.now()}_${i}`,
+            title: `Reference ${i + 1}`,
+            url,
+            type: 'REFERENCE' as const,
+            addedAt: new Date().toISOString(),
+          })),
+      ];
 
       const res = await fetch('/api/graphics', {
         method: 'POST',
@@ -2206,27 +2306,243 @@ export default function QuickActionModal({
                     />
                   </div>
 
+                  {gfxUploadError && (
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#f87171',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span>{gfxUploadError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setGfxUploadError('')}
+                        style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {uploadingGfxMedia && (
+                    <div
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(229, 169, 60, 0.12)',
+                        border: '1px solid rgba(229, 169, 60, 0.3)',
+                        color: 'var(--jns-gold)',
+                        fontSize: '12px',
+                      }}
+                    >
+                      Uploading media files to graphics library… Please wait.
+                    </div>
+                  )}
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    {/* Assets to Incorporate */}
                     <div className="form-group">
-                      <label className="form-label">Assets to Incorporate (URLs, 1 per line)</label>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: 4,
+                          flexWrap: 'wrap',
+                          gap: 4,
+                        }}
+                      >
+                        <label className="form-label" style={{ margin: 0 }}>
+                          Assets to Incorporate
+                        </label>
+                        <label
+                          className="btn btn-secondary btn-sm"
+                          style={{
+                            cursor: uploadingGfxMedia ? 'not-allowed' : 'pointer',
+                            fontSize: '11px',
+                            padding: '3px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            margin: 0,
+                          }}
+                          title="Upload media files (stored in graphics media library)"
+                        >
+                          <UploadCloud size={13} color="var(--jns-gold)" />
+                          <span>{uploadingGfxMedia ? 'Uploading…' : '+ Upload Media'}</span>
+                          <input
+                            type="file"
+                            multiple
+                            disabled={uploadingGfxMedia}
+                            onChange={(e) => {
+                              void handleUploadGfxFiles(e.target.files, 'ASSET');
+                              e.target.value = '';
+                            }}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                      </div>
                       <textarea
                         className="form-textarea"
-                        placeholder="https://dropbox.com/s/logos.zip&#10;https://drive.google.com/file/d/photo.png"
+                        placeholder="Paste URLs (1 per line) or use '+ Upload Media' above..."
                         value={gfxAssetsText}
                         onChange={(e) => setGfxAssetsText(e.target.value)}
                         rows={2}
                       />
+                      {/* Uploaded asset files list */}
+                      {uploadedAssetFiles.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                          {uploadedAssetFiles.map((file, idx) => (
+                            <div
+                              key={file.id || idx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                backgroundColor: 'var(--bg-card-subtle)',
+                                border: '1px solid var(--border-subtle)',
+                                fontSize: 11,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <FileText size={13} color="var(--jns-gold)" style={{ flexShrink: 0 }} />
+                                <span
+                                  style={{
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    maxWidth: 160,
+                                    color: 'var(--text-main)',
+                                    fontWeight: 500,
+                                  }}
+                                  title={file.name}
+                                >
+                                  {file.name}
+                                </span>
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                  ({file.sizeFormatted})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setUploadedAssetFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: 2 }}
+                                title="Remove file"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
+                    {/* Visual References / Examples */}
                     <div className="form-group">
-                      <label className="form-label">Visual References / Examples (URLs, 1 per line)</label>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: 4,
+                          flexWrap: 'wrap',
+                          gap: 4,
+                        }}
+                      >
+                        <label className="form-label" style={{ margin: 0 }}>
+                          Visual References / Examples
+                        </label>
+                        <label
+                          className="btn btn-secondary btn-sm"
+                          style={{
+                            cursor: uploadingGfxMedia ? 'not-allowed' : 'pointer',
+                            fontSize: '11px',
+                            padding: '3px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            margin: 0,
+                          }}
+                          title="Upload reference files (stored in graphics media library)"
+                        >
+                          <UploadCloud size={13} color="#38bdf8" />
+                          <span>{uploadingGfxMedia ? 'Uploading…' : '+ Upload Media'}</span>
+                          <input
+                            type="file"
+                            multiple
+                            disabled={uploadingGfxMedia}
+                            onChange={(e) => {
+                              void handleUploadGfxFiles(e.target.files, 'REFERENCE');
+                              e.target.value = '';
+                            }}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                      </div>
                       <textarea
                         className="form-textarea"
-                        placeholder="https://youtube.com/watch?v=...&#10;https://frame.io/..."
+                        placeholder="Paste URLs (1 per line) or use '+ Upload Media' above..."
                         value={gfxReferencesText}
                         onChange={(e) => setGfxReferencesText(e.target.value)}
                         rows={2}
                       />
+                      {/* Uploaded reference files list */}
+                      {uploadedRefFiles.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                          {uploadedRefFiles.map((file, idx) => (
+                            <div
+                              key={file.id || idx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                backgroundColor: 'var(--bg-card-subtle)',
+                                border: '1px solid var(--border-subtle)',
+                                fontSize: 11,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <FileText size={13} color="#38bdf8" style={{ flexShrink: 0 }} />
+                                <span
+                                  style={{
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    maxWidth: 160,
+                                    color: 'var(--text-main)',
+                                    fontWeight: 500,
+                                  }}
+                                  title={file.name}
+                                >
+                                  {file.name}
+                                </span>
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                  ({file.sizeFormatted})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setUploadedRefFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: 2 }}
+                                title="Remove file"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

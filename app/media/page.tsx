@@ -24,7 +24,9 @@ import {
   Calendar,
   Layers,
   ArrowRight,
+  Trash2,
   X,
+  Pencil,
 } from 'lucide-react';
 
 declare global {
@@ -82,6 +84,8 @@ export default function MediaPage() {
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'IMAGE' | 'VIDEO' | 'DOC'>('ALL');
   const [previewFile, setPreviewFile] = useState<MediaItem | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [albumCovers, setAlbumCovers] = useState<Record<string, { count: number; coverId?: string }>>({});
 
   // Admin view toggle: 'album' vs 'admin'
@@ -283,6 +287,53 @@ export default function MediaPage() {
     }
   };
 
+  // Admin delete media item handler
+  const deleteMediaItem = async (file: MediaItem) => {
+    if (!isAdmin) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/media/${file.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to remove media item.');
+      setNotice(`"${file.name}" was removed.`);
+      if (previewFile?.id === file.id) {
+        setPreviewFile(null);
+      }
+      await loadFilesForSelected(selected);
+      await refresh();
+    } catch (e: any) {
+      setError(e.message || 'Failed to remove media item.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Admin delete album handler
+  const deleteAlbum = async (albumId: string, albumName: string) => {
+    if (!isAdmin) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the album "${albumName}" and all of its media files? This action will permanently remove files and cannot be undone.`
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/media/albums/${albumId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete album.');
+      setNotice(`Album "${albumName}" was deleted.`);
+      if (selected === albumId) {
+        setSelected('');
+      }
+      await refresh();
+    } catch (e: any) {
+      setError(e.message || 'Failed to delete album.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const activeAlbum = albums.find((a) => a.id === selected);
 
   // Filter media files in active album
@@ -299,6 +350,43 @@ export default function MediaPage() {
   }, [albumFiles, searchQuery, typeFilter]);
 
   const canCreateAlbum = currentUser && currentUser.role !== 'TEAM_MEMBER';
+  const canManageAlbums = canCreateAlbum || isAdmin;
+
+  const openRenameAlbum = (album: Album) => {
+    setEditingAlbum(album);
+    setRenameValue(album.name);
+  };
+
+  const handleRenameAlbum = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingAlbum || !renameValue.trim()) return;
+    const trimmed = renameValue.trim();
+    if (trimmed === editingAlbum.name) {
+      setEditingAlbum(null);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/media/albums/${editingAlbum.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to rename album.');
+
+      setAlbums((prev) =>
+        prev.map((a) => (a.id === editingAlbum.id ? { ...a, name: trimmed } : a)),
+      );
+      setNotice(`Album renamed to "${trimmed}".`);
+      setEditingAlbum(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to rename album.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <main
@@ -723,6 +811,98 @@ export default function MediaPage() {
         </div>
       )}
 
+      {/* Rename Album Modal */}
+      {editingAlbum && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(6px)',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditingAlbum(null);
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 14,
+              padding: 24,
+              boxShadow: 'var(--shadow-lg)',
+              animation: 'fadeIn 0.15s ease-out',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Pencil size={20} color="var(--jns-gold)" />
+                <h3 style={{ margin: 0, fontSize: 18, color: 'var(--text-main)', fontWeight: 600 }}>
+                  Rename Album
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAlbum(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRenameAlbum} style={{ display: 'grid', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: 'var(--text-secondary)' }}>
+                  Album Title
+                </label>
+                <input
+                  className="form-input"
+                  aria-label="Album title"
+                  value={renameValue}
+                  maxLength={150}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  required
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setEditingAlbum(null)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={busy || !renameValue.trim() || renameValue.trim() === editingAlbum.name}
+                >
+                  {busy ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* ALBUM COVER SHELF: Visual stylized album cards                             */}
       {/* ========================================================================= */}
@@ -883,6 +1063,79 @@ export default function MediaPage() {
                       </span>
                     )}
 
+                    {/* Rename Album Button */}
+                    {canManageAlbums && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRenameAlbum(album);
+                        }}
+                        disabled={busy}
+                        title={`Rename album "${album.name}"`}
+                        style={{
+                          position: 'absolute',
+                          top: 8,
+                          right: isAdmin ? 42 : 8,
+                          width: 28,
+                          height: 28,
+                          borderRadius: 6,
+                          border: '1px solid var(--border-medium)',
+                          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                          backdropFilter: 'blur(4px)',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          zIndex: 5,
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = 'var(--jns-gold)';
+                          e.currentTarget.style.borderColor = 'var(--jns-gold)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = 'var(--text-secondary)';
+                          e.currentTarget.style.borderColor = 'var(--border-medium)';
+                        }}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    )}
+
+                    {/* Admin Delete Album Button */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteAlbum(album.id, album.name);
+                        }}
+                        disabled={busy}
+                        title={`Delete album "${album.name}" (Admin only)`}
+                        style={{
+                          position: 'absolute',
+                          top: 8,
+                          right: 8,
+                          width: 28,
+                          height: 28,
+                          borderRadius: 6,
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                          backdropFilter: 'blur(4px)',
+                          color: '#f87171',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          zIndex: 5,
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+
                     {/* Item Count Badge */}
                     <span
                       style={{
@@ -983,6 +1236,36 @@ export default function MediaPage() {
                 >
                   {activeAlbum.name}
                 </h2>
+                {canManageAlbums && (
+                  <button
+                    type="button"
+                    onClick={() => openRenameAlbum(activeAlbum)}
+                    disabled={busy}
+                    title={`Rename "${activeAlbum.name}"`}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 4,
+                      borderRadius: 4,
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--jns-gold)';
+                      e.currentTarget.style.backgroundColor = 'rgba(229, 169, 60, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = 'var(--text-muted)';
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                )}
                 <span
                   style={{
                     fontSize: 12,
@@ -998,31 +1281,76 @@ export default function MediaPage() {
               </div>
             </div>
 
-            {/* Upload Button */}
-            <label
-              className="btn btn-primary"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 13,
-                cursor: busy ? 'not-allowed' : 'pointer',
-                opacity: busy ? 0.7 : 1,
-              }}
-            >
-              <UploadCloud size={16} />
-              <span>{busy ? 'Uploading…' : 'Add Media to Album'}</span>
-              <input
-                type="file"
-                multiple
-                disabled={busy}
-                onChange={(e) => {
-                  void uploadToCurrentAlbum(e.target.files);
-                  e.target.value = '';
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {/* Rename Album Button */}
+              {canManageAlbums && (
+                <button
+                  type="button"
+                  onClick={() => openRenameAlbum(activeAlbum)}
+                  disabled={busy}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 13,
+                  }}
+                  title="Rename this album"
+                >
+                  <Pencil size={15} />
+                  <span>Rename Album</span>
+                </button>
+              )}
+
+              {/* Admin Delete Album Button */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => void deleteAlbum(activeAlbum.id, activeAlbum.name)}
+                  disabled={busy}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 13,
+                    color: '#f87171',
+                    borderColor: 'rgba(239, 68, 68, 0.35)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  }}
+                  title="Delete this entire album (Admin only)"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete Album</span>
+                </button>
+              )}
+
+              {/* Upload Button */}
+              <label
+                className="btn btn-primary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  opacity: busy ? 0.7 : 1,
                 }}
-                style={{ display: 'none' }}
-              />
-            </label>
+              >
+                <UploadCloud size={16} />
+                <span>{busy ? 'Uploading…' : 'Add Media to Album'}</span>
+                <input
+                  type="file"
+                  multiple
+                  disabled={busy}
+                  onChange={(e) => {
+                    void uploadToCurrentAlbum(e.target.files);
+                    e.target.value = '';
+                  }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            </div>
           </div>
 
           {/* Filtering & Search Bar */}
@@ -1322,16 +1650,16 @@ export default function MediaPage() {
                       </div>
 
                       {/* ========================================================= */}
-                      {/* MANDATORY BUTTONS: VIEW & DOWNLOAD ORIGINAL               */}
+                      {/* BUTTONS: VIEW & DOWNLOAD ORIGINAL (plus Admin Remove)     */}
                       {/* ========================================================= */}
                       <div
                         style={{
                           marginTop: 'auto',
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr',
-                          gap: 8,
+                          display: 'flex',
+                          gap: 6,
                           paddingTop: 10,
                           borderTop: '1px solid var(--border-subtle)',
+                          alignItems: 'center',
                         }}
                       >
                         <button
@@ -1339,6 +1667,7 @@ export default function MediaPage() {
                           onClick={() => setPreviewFile(file)}
                           className="btn btn-secondary btn-sm"
                           style={{
+                            flex: 1,
                             padding: '6px 10px',
                             fontSize: 12,
                             display: 'inline-flex',
@@ -1358,6 +1687,7 @@ export default function MediaPage() {
                           download
                           className="btn btn-primary btn-sm"
                           style={{
+                            flex: 1,
                             padding: '6px 10px',
                             fontSize: 12,
                             display: 'inline-flex',
@@ -1372,6 +1702,34 @@ export default function MediaPage() {
                           <Download size={14} />
                           <span>Download original</span>
                         </a>
+
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Are you sure you want to remove "${file.name}"? This action cannot be undone.`)) {
+                                void deleteMediaItem(file);
+                              }
+                            }}
+                            disabled={busy}
+                            title="Remove media item (Admin only)"
+                            style={{
+                              padding: '6px 8px',
+                              fontSize: 12,
+                              borderRadius: 6,
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                              color: '#f87171',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </article>
@@ -1389,6 +1747,8 @@ export default function MediaPage() {
         files={filteredFiles}
         onSelectFile={(f) => setPreviewFile(f)}
         onClose={() => setPreviewFile(null)}
+        isAdmin={isAdmin}
+        onDelete={deleteMediaItem}
       />
     </main>
   );

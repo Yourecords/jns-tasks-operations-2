@@ -635,6 +635,9 @@ export interface GraphicAssetLink {
   type?: 'ASSET' | 'REFERENCE';
   addedByUserId?: string;
   addedAt: string;
+  mediaId?: string;
+  mime?: string;
+  bytes?: number;
 }
 
 export interface GraphicDesignTask {

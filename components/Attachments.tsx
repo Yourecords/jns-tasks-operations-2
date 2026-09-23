@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Eye, Download, FileText, Image as ImageIcon, Film, UploadCloud, AlertCircle } from 'lucide-react';
+import { Eye, Download, FileText, Image as ImageIcon, Film, UploadCloud, AlertCircle, Trash2 } from 'lucide-react';
+import { useUser } from './UserContext';
 import MediaLightboxModal, { MediaItem } from './MediaLightboxModal';
 
 export default function Attachments({
@@ -13,6 +14,9 @@ export default function Attachments({
   target: string;
   expanded?: boolean;
 }) {
+  const { currentUser } = useUser();
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.email?.toLowerCase() === 'yskvirski@jns.org';
+
   const [open, setOpen] = useState(expanded);
   const [files, setFiles] = useState<MediaItem[]>([]);
   const [error, setError] = useState('');
@@ -34,6 +38,21 @@ export default function Attachments({
       setError(e.message || 'Unable to load files.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteFile = async (file: MediaItem) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/media/${file.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to remove file.');
+      setPreviewFile(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message || 'Failed to remove file.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -305,15 +324,15 @@ export default function Attachments({
                       {sizeFormatted} MB
                     </div>
 
-                    {/* Actions: View and Download Original */}
+                    {/* Actions: View and Download Original (plus Admin Remove) */}
                     <div
                       style={{
                         marginTop: 'auto',
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
+                        display: 'flex',
                         gap: 6,
                         paddingTop: 8,
                         borderTop: '1px solid var(--border-subtle)',
+                        alignItems: 'center',
                       }}
                     >
                       <button
@@ -321,6 +340,7 @@ export default function Attachments({
                         onClick={() => setPreviewFile(file)}
                         className="btn btn-secondary btn-sm"
                         style={{
+                          flex: 1,
                           padding: '5px 8px',
                           fontSize: 12,
                           display: 'inline-flex',
@@ -339,6 +359,7 @@ export default function Attachments({
                         download
                         className="btn btn-primary btn-sm"
                         style={{
+                          flex: 1,
                           padding: '5px 8px',
                           fontSize: 12,
                           display: 'inline-flex',
@@ -352,6 +373,33 @@ export default function Attachments({
                         <Download size={13} />
                         <span>Download</span>
                       </a>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to remove "${file.name}"?`)) {
+                              void deleteFile(file);
+                            }
+                          }}
+                          disabled={busy}
+                          title="Remove file (Admin only)"
+                          style={{
+                            padding: '5px 7px',
+                            fontSize: 12,
+                            borderRadius: 4,
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                            color: '#f87171',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -368,6 +416,8 @@ export default function Attachments({
         files={files}
         onSelectFile={(f) => setPreviewFile(f)}
         onClose={() => setPreviewFile(null)}
+        isAdmin={isAdmin}
+        onDelete={deleteFile}
       />
     </section>
   );
