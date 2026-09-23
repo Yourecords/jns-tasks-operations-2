@@ -1,4 +1,5 @@
 'use client';
+import Attachments from '@/components/Attachments';
 
 import React, { useState, useEffect } from 'react';
 import { Wrench, Plus, ExternalLink, ShieldCheck, Check, DollarSign } from 'lucide-react';
@@ -144,6 +145,7 @@ export default function EquipmentPage() {
                     <tr key={req.id}>
                       <td style={{ padding: '0.85rem 1rem' }}>
                         <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{req.itemName}</div>
+                        <Attachments kind="equipment" target={req.id} />
                         {req.productUrl && (
                           <div style={{ marginTop: '2px' }}>
                             <a

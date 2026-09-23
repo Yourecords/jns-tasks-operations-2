@@ -1,4 +1,5 @@
 'use client';
+import Attachments from '@/components/Attachments';
 
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Plus, ExternalLink, Check, ChevronDown } from 'lucide-react';
@@ -134,6 +135,7 @@ export default function ShowIdeasPage() {
                 </div>
               </div>
 
+              <Attachments kind="idea" target={idea.id} />
               {/* Status Manager for Producers/Admin */}
               <div
                 style={{

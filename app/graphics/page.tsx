@@ -1,4 +1,5 @@
 'use client';
+import Attachments from '@/components/Attachments';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -871,6 +872,7 @@ export default function GraphicsHubPage() {
                   </div>
                 </div>
 
+                <Attachments kind="graphics" target={task.id} />
                 {/* Assets and References (Immediate Requests or Long-Term) */}
                 {((task.assets && task.assets.length > 0) || (task.references && task.references.length > 0)) && (
                   <div

@@ -179,6 +179,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     },
     { label: 'Improvements', href: '/improvements', icon: Lightbulb },
     { label: 'New Show Ideas', href: '/show-ideas', icon: Sparkles },
+    { label: 'Media & Albums', href: '/media', icon: Film },
     { label: 'Meetings', href: '/meetings', icon: Users },
     { label: 'Equipment Needed', href: '/equipment', icon: Wrench },
     { label: 'Archive', href: '/archive', icon: Archive },
