@@ -1,4 +1,5 @@
 'use client';
+import Attachments from '@/components/Attachments';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -123,6 +124,7 @@ export default function ImprovementsPage() {
                   </div>
                 </div>
 
+                <Attachments kind="improvement" target={imp.id} />
                 <div className="section-panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '13px' }}>
                   <div>
                     <strong style={{ color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '11px' }}>
