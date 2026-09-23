@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, sameOrigin, driveDb, driveFetch, ownerEmail, failure } from "@/lib/google-drive";
+import { getRealAuthenticatedUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
@@ -66,7 +67,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     sameOrigin(req);
-    const user = await requireUser(req);
+    const realUser = await getRealAuthenticatedUser(req);
+    const user = realUser || (await requireUser(req));
     if (user.role !== "ADMIN" && user.email.toLowerCase() !== ownerEmail()) {
       throw new Error("Access denied: Only administrators can remove albums.");
     }

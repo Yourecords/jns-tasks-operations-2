@@ -68,7 +68,7 @@ interface Album {
 }
 
 export default function MediaPage() {
-  const { currentUser } = useUser();
+  const { currentUser, realUser } = useUser();
   const [status, setStatus] = useState<any>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [selected, setSelected] = useState('');
@@ -94,10 +94,12 @@ export default function MediaPage() {
   const isAdmin = useMemo(() => {
     return (
       currentUser?.role === 'ADMIN' ||
+      realUser?.role === 'ADMIN' ||
       currentUser?.email?.toLowerCase() === 'yskvirski@jns.org' ||
+      realUser?.email?.toLowerCase() === 'yskvirski@jns.org' ||
       !!status?.canConfigure
     );
-  }, [currentUser, status]);
+  }, [currentUser, realUser, status]);
 
   // Load view mode preference from localStorage for Admin
   useEffect(() => {
@@ -1551,6 +1553,53 @@ export default function MediaPage() {
                         </div>
                       )}
 
+                      {/* Admin Delete Media Item Button on Thumbnail */}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (
+                              window.confirm(
+                                `Are you sure you want to delete "${file.name}"? This action permanently removes the file and cannot be undone.`
+                              )
+                            ) {
+                              void deleteMediaItem(file);
+                            }
+                          }}
+                          disabled={busy}
+                          title={`Delete "${file.name}" (Admin only)`}
+                          style={{
+                            position: 'absolute',
+                            top: 8,
+                            left: 8,
+                            width: 28,
+                            height: 28,
+                            borderRadius: 6,
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                            backdropFilter: 'blur(4px)',
+                            color: '#f87171',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 5,
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.7)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.85)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+
                       {/* Format Badge */}
                       <span
                         style={{
@@ -1707,27 +1756,40 @@ export default function MediaPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (window.confirm(`Are you sure you want to remove "${file.name}"? This action cannot be undone.`)) {
+                              if (window.confirm(`Are you sure you want to delete "${file.name}"? This action cannot be undone.`)) {
                                 void deleteMediaItem(file);
                               }
                             }}
                             disabled={busy}
-                            title="Remove media item (Admin only)"
+                            className="btn btn-secondary btn-sm"
+                            title={`Delete "${file.name}" (Admin only)`}
                             style={{
-                              padding: '6px 8px',
+                              padding: '6px 10px',
                               fontSize: 12,
+                              fontWeight: 600,
                               borderRadius: 6,
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              border: '1px solid rgba(239, 68, 68, 0.4)',
                               backgroundColor: 'rgba(239, 68, 68, 0.12)',
                               color: '#f87171',
                               cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
                               justifyContent: 'center',
+                              gap: 5,
                               flexShrink: 0,
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)';
+                              e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.7)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+                              e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
                             }}
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
+                            <span>Delete</span>
                           </button>
                         )}
                       </div>

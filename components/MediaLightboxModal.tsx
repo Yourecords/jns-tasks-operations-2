@@ -241,11 +241,11 @@ export default function MediaLightboxModal({
             <button
               type="button"
               onClick={() => {
-                if (window.confirm(`Are you sure you want to remove "${file.name}"? This action will delete it permanently.`)) {
+                if (window.confirm(`Are you sure you want to delete "${file.name}"? This action will delete it permanently.`)) {
                   void onDelete(file);
                 }
               }}
-              title="Remove media item (Admin only)"
+              title="Delete media item (Admin only)"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -262,7 +262,7 @@ export default function MediaLightboxModal({
               }}
             >
               <Trash2 size={16} />
-              <span>Remove</span>
+              <span>Delete</span>
             </button>
           )}
 

@@ -8,6 +8,7 @@ import {
   ownerEmail,
   failure,
 } from "@/lib/google-drive";
+import { getRealAuthenticatedUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,8 @@ export async function DELETE(
 ) {
   try {
     sameOrigin(req);
-    const user = await requireUser(req);
+    const realUser = await getRealAuthenticatedUser(req);
+    const user = realUser || (await requireUser(req));
     if (user.role !== "ADMIN" && user.email.toLowerCase() !== ownerEmail()) {
       throw new Error("Access denied: Only administrators can remove media items.");
     }
