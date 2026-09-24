@@ -96,12 +96,9 @@ export default function MediaPage() {
   const isAdmin = useMemo(() => {
     return (
       currentUser?.role === 'ADMIN' ||
-      realUser?.role === 'ADMIN' ||
-      currentUser?.email?.toLowerCase() === 'yskvirski@jns.org' ||
-      realUser?.email?.toLowerCase() === 'yskvirski@jns.org' ||
-      !!status?.canConfigure
+      currentUser?.email?.toLowerCase() === 'yskvirski@jns.org'
     );
-  }, [currentUser, realUser, status]);
+  }, [currentUser]);
 
   // Load view mode preference from localStorage for Admin
   useEffect(() => {
