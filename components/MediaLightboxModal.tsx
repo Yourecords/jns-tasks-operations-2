@@ -46,6 +46,7 @@ export default function MediaLightboxModal({
 }: MediaLightboxModalProps) {
   const [zoomed, setZoomed] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -122,6 +123,7 @@ export default function MediaLightboxModal({
   useEffect(() => {
     setZoomed(false);
     setVideoError(false);
+    setRetryCount(0);
     setPlaybackRate(1);
   }, [file?.id]);
 
@@ -425,12 +427,15 @@ export default function MediaLightboxModal({
               }}
             >
               <video
+                key={`${file.id}-${retryCount}`}
                 ref={videoRef}
+                src={viewUrl}
                 controls
                 autoPlay
                 playsInline
-                preload="metadata"
-                onError={() => {
+                preload="auto"
+                onError={(e) => {
+                  console.warn('HTML5 Video error occurred:', e);
                   setVideoError(true);
                 }}
                 style={{
@@ -440,9 +445,7 @@ export default function MediaLightboxModal({
                   outline: 'none',
                 }}
               >
-                <source src={viewUrl} type={file.mime?.startsWith('video/') ? file.mime : (ext === 'mov' ? 'video/quicktime' : 'video/mp4')} />
                 <source src={viewUrl} type="video/mp4" />
-                <source src={viewUrl} type="video/quicktime" />
                 <source src={viewUrl} type="video/webm" />
                 Your browser does not support the video tag.
               </video>
@@ -598,13 +601,33 @@ export default function MediaLightboxModal({
                 <span>Download Original ({sizeMb} MB)</span>
               </a>
 
+              <a
+                href={viewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '10px 16px',
+                  borderRadius: 8,
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  color: '#cbd5e1',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  textDecoration: 'none',
+                }}
+              >
+                <ExternalLink size={15} />
+                <span>Open in New Tab</span>
+              </a>
+
               <button
                 type="button"
                 onClick={() => {
                   setVideoError(false);
-                  if (videoRef.current) {
-                    videoRef.current.load();
-                  }
+                  setRetryCount((prev) => prev + 1);
                 }}
                 style={{
                   display: 'inline-flex',

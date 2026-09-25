@@ -75,9 +75,8 @@ export function previewType(bytes: Buffer, filename?: string): string {
     return "image/webp";
 
   // Video: ISO Base Media / MP4 / QuickTime MOV
+  // Modern web browsers (Chrome, Edge, Firefox) reject 'video/quicktime' but natively decode ISO-BMFF MOV under 'video/mp4'
   if (bytes.length >= 8 && bytes.subarray(4, 8).toString("ascii") === "ftyp") {
-    const brand = bytes.subarray(8, 12).toString("ascii").toLowerCase();
-    if (brand.startsWith("qt")) return "video/quicktime";
     return "video/mp4";
   }
   if (
@@ -86,7 +85,7 @@ export function previewType(bytes: Buffer, filename?: string): string {
       bytes.subarray(4, 8).toString("ascii").toLowerCase(),
     )
   ) {
-    return "video/quicktime";
+    return "video/mp4";
   }
   if (
     bytes.length >= 4 &&
@@ -103,8 +102,7 @@ export function previewType(bytes: Buffer, filename?: string): string {
   // Filename extension fallback for valid media containers
   if (filename) {
     const ext = (filename.split(".").pop() || "").toLowerCase();
-    if (ext === "mp4" || ext === "m4v") return "video/mp4";
-    if (ext === "mov") return "video/quicktime";
+    if (ext === "mp4" || ext === "m4v" || ext === "mov") return "video/mp4";
     if (ext === "webm") return "video/webm";
     if (ext === "ogv") return "video/ogg";
     if (ext === "pdf") return "application/pdf";
@@ -114,16 +112,18 @@ export function previewType(bytes: Buffer, filename?: string): string {
 }
 
 export function inferMimeType(name: string, currentMime?: string): string {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  // Standardize QuickTime MOV to video/mp4 so browsers don't reject them with unsupported MIME error
+  if (ext === "mov" || currentMime === "video/quicktime") {
+    return "video/mp4";
+  }
   if (currentMime && currentMime !== "application/octet-stream") {
     return currentMime;
   }
-  const ext = (name.split(".").pop() || "").toLowerCase();
   switch (ext) {
     case "mp4":
     case "m4v":
       return "video/mp4";
-    case "mov":
-      return "video/quicktime";
     case "webm":
       return "video/webm";
     case "ogv":

@@ -53,8 +53,13 @@ export async function GET(
       (c) => `%${c.charCodeAt(0).toString(16)}`,
     );
 
+    let streamMime = mime;
+    if (inline && (streamMime === "video/quicktime" || file.name.toLowerCase().endsWith(".mov"))) {
+      streamMime = "video/mp4";
+    }
+
     const headers = new Headers();
-    headers.set("Content-Type", inline ? mime : "application/octet-stream");
+    headers.set("Content-Type", inline ? streamMime : "application/octet-stream");
     headers.set(
       "Content-Disposition",
       `${inline ? "inline" : "attachment"}; filename*=UTF-8''${filename}`,
