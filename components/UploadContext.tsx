@@ -345,10 +345,22 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+const defaultContext: UploadContextType = {
+  items: [],
+  isOpen: false,
+  isMinimized: false,
+  isUploading: false,
+  openWindow: () => {},
+  closeWindow: () => {},
+  toggleMinimize: () => {},
+  queueUploads: () => {},
+  cancelItem: () => {},
+  cancelAll: () => {},
+  clearCompleted: () => {},
+  retryItem: () => {},
+};
+
 export function useUpload() {
   const ctx = useContext(UploadContext);
-  if (!ctx) {
-    throw new Error('useUpload must be used within an UploadProvider');
-  }
-  return ctx;
+  return ctx || defaultContext;
 }

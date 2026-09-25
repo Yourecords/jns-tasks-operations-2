@@ -46,38 +46,14 @@ export default function UploadProgressWindow() {
   // Auto-scroll list as files update
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Don't render if not open or no items
-  if (!isOpen || items.length === 0) return null;
-
-  // Calculate aggregate stats
-  const totalCount = items.length;
-  const completedCount = items.filter((it) => it.status === 'completed').length;
-  const errorCount = items.filter((it) => it.status === 'error').length;
-  const activeCount = items.filter((it) => it.status === 'uploading' || it.status === 'queued').length;
-
-  const totalBytes = items.reduce((sum, it) => sum + (it.totalBytes || it.size || 0), 0);
-  const loadedBytes = items.reduce((sum, it) => {
-    if (it.status === 'completed') return sum + (it.totalBytes || it.size || 0);
-    return sum + (it.loadedBytes || 0);
-  }, 0);
-
-  const overallPercent = totalBytes > 0 ? Math.min(100, Math.round((loadedBytes / totalBytes) * 100)) : 0;
-  const allDone = activeCount === 0;
-
-  const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
-  const loadedMb = (loadedBytes / (1024 * 1024)).toFixed(1);
-
-  // Group target title
-  const targetTitle = items[items.length - 1]?.targetName || 'Media & Albums';
-
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
     setIsDragging(true);
 
     const rect = windowRef.current?.getBoundingClientRect();
-    const currentX = rect ? rect.left : window.innerWidth - 400;
-    const currentY = rect ? rect.top : window.innerHeight - 380;
+    const currentX = rect ? rect.left : (typeof window !== 'undefined' ? window.innerWidth - 400 : 800);
+    const currentY = rect ? rect.top : (typeof window !== 'undefined' ? window.innerHeight - 380 : 500);
 
     dragStartRef.current = {
       startX: e.clientX,
@@ -112,6 +88,30 @@ export default function UploadProgressWindow() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging]);
+
+  // Don't render if not open or no items (AFTER all React hooks have run)
+  if (!isOpen || items.length === 0) return null;
+
+  // Calculate aggregate stats
+  const totalCount = items.length;
+  const completedCount = items.filter((it) => it.status === 'completed').length;
+  const errorCount = items.filter((it) => it.status === 'error').length;
+  const activeCount = items.filter((it) => it.status === 'uploading' || it.status === 'queued').length;
+
+  const totalBytes = items.reduce((sum, it) => sum + (it.totalBytes || it.size || 0), 0);
+  const loadedBytes = items.reduce((sum, it) => {
+    if (it.status === 'completed') return sum + (it.totalBytes || it.size || 0);
+    return sum + (it.loadedBytes || 0);
+  }, 0);
+
+  const overallPercent = totalBytes > 0 ? Math.min(100, Math.round((loadedBytes / totalBytes) * 100)) : 0;
+  const allDone = activeCount === 0;
+
+  const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
+  const loadedMb = (loadedBytes / (1024 * 1024)).toFixed(1);
+
+  // Group target title
+  const targetTitle = items[items.length - 1]?.targetName || 'Media & Albums';
 
   const getFileIcon = (filename: string) => {
     const ext = (filename.split('.').pop() || '').toLowerCase();
