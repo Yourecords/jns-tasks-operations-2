@@ -8,6 +8,7 @@ import {
   ownerEmail,
   failure,
 } from "@/lib/google-drive";
+import { inferMimeType } from "@/lib/drive-security";
 import { getRealAuthenticatedUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -25,25 +26,53 @@ export async function GET(
     ).rows[0];
     if (!file) return new Response("Not found", { status: 404 });
     await checkTarget(file.kind, file.target_id, user);
+
+    const mime = inferMimeType(file.name, file.mime);
+    const isDownload = req.nextUrl.searchParams.get("download") === "1";
+    const isPreviewable =
+      mime.startsWith("image/") ||
+      mime.startsWith("video/") ||
+      mime.startsWith("audio/") ||
+      mime === "application/pdf";
+    const inline = isPreviewable && !isDownload;
+
+    // Forward HTTP Range header if requested (vital for HTML5 video seeking & playback)
+    const range = req.headers.get("range");
+    const driveHeaders: Record<string, string> = {};
+    if (range) {
+      driveHeaders["Range"] = range;
+    }
+
     const response = await driveFetch(
       `drive/v3/files/${encodeURIComponent(file.drive_id)}?alt=media`,
+      { headers: driveHeaders },
     );
-    const inline =
-      ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(
-        file.mime,
-      ) && req.nextUrl.searchParams.get("download") !== "1";
+
     const filename = encodeURIComponent(file.name).replace(
       /['()*]/g,
       (c) => `%${c.charCodeAt(0).toString(16)}`,
     );
+
+    const headers = new Headers();
+    headers.set("Content-Type", inline ? mime : "application/octet-stream");
+    headers.set(
+      "Content-Disposition",
+      `${inline ? "inline" : "attachment"}; filename*=UTF-8''${filename}`,
+    );
+    headers.set("Cache-Control", "private, no-store");
+    headers.set("Accept-Ranges", "bytes");
+    headers.set("X-Content-Type-Options", "nosniff");
+
+    if (response.headers.get("content-range")) {
+      headers.set("Content-Range", response.headers.get("content-range")!);
+    }
+    if (response.headers.get("content-length")) {
+      headers.set("Content-Length", response.headers.get("content-length")!);
+    }
+
     return new Response(response.body, {
-      headers: {
-        "Content-Type": inline ? file.mime : "application/octet-stream",
-        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${filename}`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-      },
+      status: response.status,
+      headers,
     });
   } catch (e) {
     return failure(e);

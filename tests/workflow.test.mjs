@@ -1121,7 +1121,7 @@ try {
     {
       showId: 'show_the_quad',
       episodeNumber: '990',
-      filmingDate: '2026-09-25',
+      filmingDate: '2026-10-04',
       filmingTime: '10:00 - 11:30',
       location: 'IN_STUDIO',
       priority: 'NORMAL',

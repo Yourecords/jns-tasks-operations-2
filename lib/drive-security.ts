@@ -59,7 +59,7 @@ export function safeName(input: string): string {
   if (!name) throw new Error("A file name is required.");
   return name;
 }
-export function previewType(bytes: Buffer): string {
+export function previewType(bytes: Buffer, filename?: string): string {
   if (
     bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
   )
@@ -73,5 +73,74 @@ export function previewType(bytes: Buffer): string {
     bytes.subarray(8, 12).toString() === "WEBP"
   )
     return "image/webp";
+
+  // Video: ISO Base Media / MP4 / QuickTime MOV
+  if (bytes.length >= 8 && bytes.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = bytes.subarray(8, 12).toString("ascii").toLowerCase();
+    if (brand.startsWith("qt")) return "video/quicktime";
+    return "video/mp4";
+  }
+  if (
+    bytes.length >= 8 &&
+    ["moov", "mdat", "wide", "free"].includes(
+      bytes.subarray(4, 8).toString("ascii").toLowerCase(),
+    )
+  ) {
+    return "video/quicktime";
+  }
+  if (
+    bytes.length >= 4 &&
+    bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
+  ) {
+    return "video/webm";
+  }
+
+  // Document: PDF
+  if (bytes.length >= 5 && bytes.subarray(0, 5).toString("ascii") === "%PDF-") {
+    return "application/pdf";
+  }
+
+  // Filename extension fallback for valid media containers
+  if (filename) {
+    const ext = (filename.split(".").pop() || "").toLowerCase();
+    if (ext === "mp4" || ext === "m4v") return "video/mp4";
+    if (ext === "mov") return "video/quicktime";
+    if (ext === "webm") return "video/webm";
+    if (ext === "ogv") return "video/ogg";
+    if (ext === "pdf") return "application/pdf";
+  }
+
   return "application/octet-stream";
 }
+
+export function inferMimeType(name: string, currentMime?: string): string {
+  if (currentMime && currentMime !== "application/octet-stream") {
+    return currentMime;
+  }
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  switch (ext) {
+    case "mp4":
+    case "m4v":
+      return "video/mp4";
+    case "mov":
+      return "video/quicktime";
+    case "webm":
+      return "video/webm";
+    case "ogv":
+      return "video/ogg";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "pdf":
+      return "application/pdf";
+    default:
+      return currentMime || "application/octet-stream";
+  }
+}
+

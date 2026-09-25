@@ -10,7 +10,7 @@ import {
   uploadLimit,
   failure,
 } from "@/lib/google-drive";
-import { boundedBody, safeName, previewType } from "@/lib/drive-security";
+import { boundedBody, safeName, previewType, inferMimeType } from "@/lib/drive-security";
 export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   try {
@@ -23,8 +23,12 @@ export async function GET(req: NextRequest) {
       "SELECT id,name,mime,bytes,created_at FROM jns_media_files WHERE kind=$1 AND target_id=$2 ORDER BY created_at DESC",
       [kind, target],
     );
+    const resolved = files.rows.map((row) => ({
+      ...row,
+      mime: inferMimeType(row.name, row.mime),
+    }));
     return NextResponse.json(
-      { files: files.rows },
+      { files: resolved },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
@@ -53,7 +57,7 @@ export async function POST(req: NextRequest) {
       throw new Error("Too many uploads. Please try again later.");
     const name = safeName(req.nextUrl.searchParams.get("name") || "");
     const bytes = await boundedBody(req, uploadLimit());
-    const mime = previewType(bytes);
+    const mime = previewType(bytes, name);
     const id = randomUUID();
     const boundary = `jns_${randomUUID()}`;
     const meta = {

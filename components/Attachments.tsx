@@ -217,8 +217,9 @@ export default function Attachments({
             }}
           >
             {files.map((file) => {
-              const isImage = file.mime?.startsWith('image/');
-              const isVideo = file.mime?.startsWith('video/');
+              const fExt = (file.name.split('.').pop() || '').toLowerCase();
+              const isImage = file.mime?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(fExt);
+              const isVideo = file.mime?.startsWith('video/') || ['mp4', 'mov', 'webm', 'm4v', 'mkv', 'avi', 'ogv', 'wmv'].includes(fExt);
               const ext = file.name.split('.').pop()?.toUpperCase() || (file.mime ? file.mime.split('/')[1]?.toUpperCase() : 'FILE');
               const sizeFormatted = (Number(file.bytes || 0) / (1024 * 1024)).toFixed(2);
 

@@ -157,7 +157,9 @@ export default function MediaPage() {
         const res = await fetch(`/api/media?kind=album&target=${alb.id}`);
         const data = await res.json();
         if (data.files) {
-          const firstImage = data.files.find((f: MediaItem) => f.mime?.startsWith('image/'));
+          const firstImage = data.files.find(
+            (f: MediaItem) => f.mime?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif)$/i.test(f.name)
+          );
           stats[alb.id] = {
             count: data.files.length,
             coverId: firstImage?.id,
@@ -183,7 +185,9 @@ export default function MediaPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to load media.');
       setAlbumFiles(data.files || []);
       // Update stats for this album
-      const firstImage = (data.files || []).find((f: MediaItem) => f.mime?.startsWith('image/'));
+      const firstImage = (data.files || []).find(
+        (f: MediaItem) => f.mime?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif)$/i.test(f.name)
+      );
       setAlbumCovers((prev) => ({
         ...prev,
         [albumId]: {
@@ -343,9 +347,13 @@ export default function MediaPage() {
       const matchesSearch = !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
-      if (typeFilter === 'IMAGE') return f.mime?.startsWith('image/');
-      if (typeFilter === 'VIDEO') return f.mime?.startsWith('video/');
-      if (typeFilter === 'DOC') return !f.mime?.startsWith('image/') && !f.mime?.startsWith('video/');
+      const fExt = (f.name.split('.').pop() || '').toLowerCase();
+      const isImg = f.mime?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(fExt);
+      const isVid = f.mime?.startsWith('video/') || ['mp4', 'mov', 'webm', 'm4v', 'mkv', 'avi', 'ogv', 'wmv'].includes(fExt);
+
+      if (typeFilter === 'IMAGE') return isImg;
+      if (typeFilter === 'VIDEO') return isVid;
+      if (typeFilter === 'DOC') return !isImg && !isVid;
       return true;
     });
   }, [albumFiles, searchQuery, typeFilter]);
@@ -1622,8 +1630,9 @@ export default function MediaPage() {
               }}
             >
               {filteredFiles.map((file) => {
-                const isImage = file.mime?.startsWith('image/');
-                const isVideo = file.mime?.startsWith('video/');
+                const fExt = (file.name.split('.').pop() || '').toLowerCase();
+                const isImage = file.mime?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(fExt);
+                const isVideo = file.mime?.startsWith('video/') || ['mp4', 'mov', 'webm', 'm4v', 'mkv', 'avi', 'ogv', 'wmv'].includes(fExt);
                 const ext =
                   file.name.split('.').pop()?.toUpperCase() ||
                   (file.mime ? file.mime.split('/')[1]?.toUpperCase() : 'FILE');
@@ -1800,8 +1809,8 @@ export default function MediaPage() {
                             border: '1px solid rgba(255, 255, 255, 0.2)',
                           }}
                         >
-                          <Eye size={14} />
-                          <span>Quick Preview</span>
+                          {isVideo ? <Film size={14} /> : <Eye size={14} />}
+                          <span>{isVideo ? 'Play Video' : 'Quick Preview'}</span>
                         </div>
                       </div>
                     </div>
