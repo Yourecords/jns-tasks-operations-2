@@ -125,6 +125,24 @@ function renderFormattedText(text: string): React.ReactNode[] {
   });
 }
 
+function getFirstName(user?: { name?: string; fullName?: string } | null): string {
+  if (!user) return '';
+  const raw = user.name?.trim() || user.fullName?.trim() || '';
+  if (!raw) return '';
+  return raw.split(' ')[0];
+}
+
+function createWelcomeMessage(user?: { name?: string; fullName?: string } | null): Message {
+  const firstName = getFirstName(user);
+  const greeting = firstName ? `👋 Hello ${firstName}!` : '👋 Hello!';
+  return {
+    id: 'welcome',
+    role: 'assistant',
+    content: `${greeting} I am the **JNS Video Operations AI Assistant**.\n\nI can help you check your active assignments, review upcoming filming schedules, look up SOP workflow rules, or navigate any production task. How can I assist you today?`,
+    createdAt: Date.now(),
+  };
+}
+
 export default function AiAssistantDrawer() {
   const { currentUser } = useUser();
   const { theme } = useTheme();
@@ -138,34 +156,52 @@ export default function AiAssistantDrawer() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Restore messages from sessionStorage on mount
+  // Restore messages from user-scoped sessionStorage on mount or user change
   useEffect(() => {
+    // Purge legacy unscoped key from previous versions to prevent cross-user greeting bleed
     try {
-      const saved = sessionStorage.getItem('jns_ai_messages');
+      sessionStorage.removeItem('jns_ai_messages');
+    } catch {}
+
+    const welcomeMsg = createWelcomeMessage(currentUser);
+
+    if (!currentUser?.id) {
+      setMessages([welcomeMsg]);
+      return;
+    }
+
+    const userKey = `jns_ai_messages_${currentUser.id}`;
+    try {
+      const saved = sessionStorage.getItem(userKey);
       if (saved) {
-        setMessages(JSON.parse(saved));
-      } else {
-        // Welcome default message
-        setMessages([
-          {
-            id: 'welcome',
-            role: 'assistant',
-            content: `👋 Hello ${currentUser?.name ? currentUser.name.split(' ')[0] : 'there'}! I am the **JNS Video Operations AI Assistant**.\n\nI can help you check your active assignments, review upcoming filming schedules, look up SOP workflow rules, or navigate any production task. How can I assist you today?`,
-            createdAt: Date.now(),
-          },
-        ]);
+        const parsed: Message[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Always ensure the welcome message matches the current user's name
+          const updated = parsed.map((m) => {
+            if (m.id === 'welcome' || (m.role === 'assistant' && m.content.startsWith('👋 Hello'))) {
+              return {
+                ...m,
+                content: createWelcomeMessage(currentUser).content,
+              };
+            }
+            return m;
+          });
+          setMessages(updated);
+          return;
+        }
       }
     } catch {}
-  }, [currentUser]);
 
-  // Persist messages to sessionStorage
+    setMessages([welcomeMsg]);
+  }, [currentUser?.id, currentUser?.name, currentUser?.fullName]);
+
+  // Persist messages to user-scoped sessionStorage
   useEffect(() => {
-    if (messages.length > 0) {
-      try {
-        sessionStorage.setItem('jns_ai_messages', JSON.stringify(messages));
-      } catch {}
-    }
-  }, [messages]);
+    if (!currentUser?.id || messages.length === 0) return;
+    try {
+      sessionStorage.setItem(`jns_ai_messages_${currentUser.id}`, JSON.stringify(messages));
+    } catch {}
+  }, [messages, currentUser?.id]);
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
@@ -175,16 +211,13 @@ export default function AiAssistantDrawer() {
   }, [messages, isOpen, loading]);
 
   const clearChat = () => {
-    const welcome: Message = {
-      id: `w-${Date.now()}`,
-      role: 'assistant',
-      content: `Chat history cleared. How can I assist you with your JNS Video tasks?`,
-      createdAt: Date.now(),
-    };
+    const welcome = createWelcomeMessage(currentUser);
     setMessages([welcome]);
-    try {
-      sessionStorage.removeItem('jns_ai_messages');
-    } catch {}
+    if (currentUser?.id) {
+      try {
+        sessionStorage.removeItem(`jns_ai_messages_${currentUser.id}`);
+      } catch {}
+    }
   };
 
   const handleSend = async (textToSend?: string) => {

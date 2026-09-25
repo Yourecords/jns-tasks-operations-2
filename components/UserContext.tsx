@@ -107,6 +107,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error('Logout error', err);
     } finally {
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.clear();
+        } catch {}
+      }
       setCurrentUser(null);
       setRealUser(null);
       setIsImpersonating(false);
