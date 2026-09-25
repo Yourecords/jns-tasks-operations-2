@@ -13,6 +13,8 @@ import MobileBottomNav from '@/components/MobileBottomNav';
 import ViewAsBanner from '@/components/ViewAsBanner';
 import ViewAsModal from '@/components/ViewAsModal';
 import MessagingDock from '@/components/MessagingDock';
+import { UploadProvider } from '@/components/UploadContext';
+import UploadProgressWindow from '@/components/UploadProgressWindow';
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -106,6 +108,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         }}
       />
       <MessagingDock />
+      <UploadProgressWindow />
     </>
   );
 }
@@ -148,7 +151,9 @@ export default function RootLayout({
       <body className="theme-dark" suppressHydrationWarning>
         <ThemeProvider>
           <UserProvider>
-            <AppShell>{children}</AppShell>
+            <UploadProvider>
+              <AppShell>{children}</AppShell>
+            </UploadProvider>
           </UserProvider>
         </ThemeProvider>
       </body>

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, Download, FileText, Image as ImageIcon, Film, UploadCloud, AlertCircle, Trash2 } from 'lucide-react';
 import { useUser } from './UserContext';
+import { useUpload } from './UploadContext';
 import MediaLightboxModal, { MediaItem } from './MediaLightboxModal';
 
 export default function Attachments({
@@ -15,6 +16,7 @@ export default function Attachments({
   expanded?: boolean;
 }) {
   const { currentUser } = useUser();
+  const { queueUploads } = useUpload();
   const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.email?.toLowerCase() === 'yskvirski@jns.org';
 
   const [open, setOpen] = useState(expanded);
@@ -68,33 +70,24 @@ export default function Attachments({
     }
   }, [open, kind, target]);
 
-  const upload = async (list: FileList | null) => {
+  const upload = (list: FileList | null) => {
     if (!list) return;
     setError('');
-    setBusy(true);
-    try {
-      for (const file of Array.from(list)) {
-        if (file.size > limit)
-          throw new Error(
-            `${file.name}: maximum file size is ${limit / 1024 / 1024} MB.`,
-          );
-        const r = await fetch(
-          `/api/media?${query}&name=${encodeURIComponent(file.name)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: file,
-          },
-        );
-        const d = await r.json();
-        if (!r.ok) throw new Error(`${file.name}: ${d.error}`);
-      }
-    } catch (e: any) {
-      setError(e.message || 'Upload failed.');
-    } finally {
-      await load();
-      setBusy(false);
-    }
+    queueUploads({
+      files: Array.from(list),
+      targetUrl: (file) => `/api/media?${query}&name=${encodeURIComponent(file.name)}`,
+      targetName: `Attachments (${kind.toLowerCase()})`,
+      maxBytes: limit,
+      onFileUploaded: () => {
+        void load();
+      },
+      onAllCompleted: () => {
+        void load();
+      },
+      onError: (err) => {
+        setError(err);
+      },
+    });
   };
 
   return (

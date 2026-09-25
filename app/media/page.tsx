@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useUser } from '@/components/UserContext';
 import Attachments from '@/components/Attachments';
 import MediaLightboxModal, { MediaItem } from '@/components/MediaLightboxModal';
+import { useUpload } from '@/components/UploadContext';
 import {
   Film,
   Folder,
@@ -73,6 +74,7 @@ export default function MediaPage() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [selected, setSelected] = useState('');
   const [name, setName] = useState('');
+  const { queueUploads, isUploading } = useUpload();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -260,36 +262,30 @@ export default function MediaPage() {
     picker.setVisible(true);
   };
 
-  // Upload handler for stylized view
-  const uploadToCurrentAlbum = async (list: FileList | null) => {
+  // Upload handler with undocked real-time progress window
+  const uploadToCurrentAlbum = (list: FileList | null) => {
     if (!list || !selected) return;
-    setError('');
-    setBusy(true);
-    const limit = status?.maxBytes || 25 * 1024 * 1024;
-    try {
-      for (const file of Array.from(list)) {
-        if (file.size > limit)
-          throw new Error(
-            `${file.name}: maximum file size is ${(limit / (1024 * 1024)).toFixed(0)} MB.`,
-          );
-        const r = await fetch(
-          `/api/media?kind=album&target=${selected}&name=${encodeURIComponent(file.name)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: file,
-          },
-        );
-        const d = await r.json();
-        if (!r.ok) throw new Error(`${file.name}: ${d.error}`);
-      }
-      setNotice('Files uploaded successfully to album!');
-    } catch (e: any) {
-      setError(e.message || 'Upload failed.');
-    } finally {
-      await loadFilesForSelected(selected);
-      setBusy(false);
-    }
+    const currentAlbumId = selected;
+    const albumName = activeAlbum?.name || 'Album';
+    const limit = status?.maxBytes || 100 * 1024 * 1024;
+
+    queueUploads({
+      files: Array.from(list),
+      targetUrl: (file) => `/api/media?kind=album&target=${currentAlbumId}&name=${encodeURIComponent(file.name)}`,
+      targetName: albumName,
+      maxBytes: limit,
+      onFileUploaded: () => {
+        void loadFilesForSelected(currentAlbumId);
+      },
+      onAllCompleted: () => {
+        setNotice('Files uploaded successfully to album!');
+        void loadFilesForSelected(currentAlbumId);
+        void refresh();
+      },
+      onError: (err) => {
+        setError(err);
+      },
+    });
   };
 
   // Admin delete media item handler

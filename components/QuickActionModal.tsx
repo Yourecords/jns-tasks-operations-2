@@ -22,6 +22,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useUser } from './UserContext';
+import { useUpload } from './UploadContext';
 import { countWords, isEligibleEditor, findStudioConflict } from '@/lib/utils';
 import { EquipmentPurchaseType } from '@/lib/types';
 
@@ -77,6 +78,7 @@ export default function QuickActionModal({
   onSuccess,
 }: QuickActionModalProps) {
   const { currentUser, allUsers } = useUser();
+  const { queueUploads } = useUpload();
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [shows, setShows] = useState<any[]>([]);
   const [existingProductions, setExistingProductions] = useState<any[]>([]);
@@ -205,43 +207,34 @@ export default function QuickActionModal({
   const handleUploadGfxFiles = async (fileList: FileList | null, targetType: 'ASSET' | 'REFERENCE') => {
     if (!fileList || fileList.length === 0) return;
     setGfxUploadError('');
-    setUploadingGfxMedia(true);
     try {
       const albumId = await getGraphicsAlbumId();
-      const newItems: { id: string; name: string; sizeFormatted: string; url: string; mime?: string; bytes?: number }[] = [];
-
-      for (const file of Array.from(fileList)) {
-        const res = await fetch(
-          `/api/media?kind=album&target=${albumId}&name=${encodeURIComponent(file.name)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: file,
-          },
-        );
-        const data = await res.json();
-        if (!res.ok) throw new Error(`${file.name}: ${data.error || 'Upload failed'}`);
-
-        const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-        newItems.push({
-          id: data.id,
-          name: file.name,
-          sizeFormatted: `${sizeMb} MB`,
-          url: `/api/media/${data.id}`,
-          mime: file.type,
-          bytes: file.size,
-        });
-      }
-
-      if (targetType === 'ASSET') {
-        setUploadedAssetFiles((prev) => [...prev, ...newItems]);
-      } else {
-        setUploadedRefFiles((prev) => [...prev, ...newItems]);
-      }
+      queueUploads({
+        files: Array.from(fileList),
+        targetUrl: (file) => `/api/media?kind=album&target=${albumId}&name=${encodeURIComponent(file.name)}`,
+        targetName: targetType === 'ASSET' ? 'Graphic Assets' : 'Visual References',
+        onFileUploaded: (file, data) => {
+          const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+          const newItem = {
+            id: data.id,
+            name: file.name,
+            sizeFormatted: `${sizeMb} MB`,
+            url: `/api/media/${data.id}`,
+            mime: file.type,
+            bytes: file.size,
+          };
+          if (targetType === 'ASSET') {
+            setUploadedAssetFiles((prev) => [...prev, newItem]);
+          } else {
+            setUploadedRefFiles((prev) => [...prev, newItem]);
+          }
+        },
+        onError: (err) => {
+          setGfxUploadError(err);
+        },
+      });
     } catch (err: any) {
-      setGfxUploadError(err.message || 'Error uploading media file.');
-    } finally {
-      setUploadingGfxMedia(false);
+      setGfxUploadError(err.message || 'Error locating graphics media album.');
     }
   };
 
