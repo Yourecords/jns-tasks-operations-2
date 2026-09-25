@@ -13,6 +13,7 @@ import MobileBottomNav from '@/components/MobileBottomNav';
 import ViewAsBanner from '@/components/ViewAsBanner';
 import ViewAsModal from '@/components/ViewAsModal';
 import MessagingDock from '@/components/MessagingDock';
+import AiAssistantDrawer from '@/components/AiAssistantDrawer';
 import { UploadProvider } from '@/components/UploadContext';
 import UploadProgressWindow from '@/components/UploadProgressWindow';
 
@@ -108,6 +109,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         }}
       />
       <MessagingDock />
+      <AiAssistantDrawer />
       <UploadProgressWindow />
     </>
   );
