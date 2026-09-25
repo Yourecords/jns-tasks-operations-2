@@ -61,7 +61,8 @@ export async function driveDb() {
     CREATE TABLE IF NOT EXISTS jns_media_files (
       id uuid PRIMARY KEY, drive_id text NOT NULL UNIQUE, kind text NOT NULL, target_id text NOT NULL,
       name text NOT NULL, mime text NOT NULL, bytes bigint NOT NULL, uploaded_by text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now());
+      created_at timestamptz NOT NULL DEFAULT now(), thumbnail text);
+    ALTER TABLE jns_media_files ADD COLUMN IF NOT EXISTS thumbnail text;
     CREATE INDEX IF NOT EXISTS jns_media_target ON jns_media_files(kind,target_id);
   `,
       )

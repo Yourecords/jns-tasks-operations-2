@@ -5,6 +5,12 @@ import { Eye, Download, FileText, Image as ImageIcon, Film, UploadCloud, AlertCi
 import { useUser } from './UserContext';
 import { useUpload } from './UploadContext';
 import MediaLightboxModal, { MediaItem } from './MediaLightboxModal';
+import VideoThumbnail from './VideoThumbnail';
+import {
+  isVideoFile,
+  captureVideoThumbnail,
+  saveThumbnailToServer,
+} from '@/lib/video-thumbnail';
 
 export default function Attachments({
   kind,
@@ -78,7 +84,17 @@ export default function Attachments({
       targetUrl: (file) => `/api/media?${query}&name=${encodeURIComponent(file.name)}`,
       targetName: `Attachments (${kind.toLowerCase()})`,
       maxBytes: limit,
-      onFileUploaded: () => {
+      onFileUploaded: async (file, result) => {
+        if (result?.id && isVideoFile(file)) {
+          try {
+            const thumbResult = await captureVideoThumbnail(file, { seekTime: 1.5 });
+            if (thumbResult?.thumbnail) {
+              await saveThumbnailToServer(result.id, thumbResult.thumbnail);
+            }
+          } catch (err) {
+            console.warn('Auto-thumbnail creation on attachment upload failed:', err);
+          }
+        }
         void load();
       },
       onAllCompleted: () => {
@@ -257,6 +273,13 @@ export default function Attachments({
                           transition: 'transform 0.25s ease',
                         }}
                       />
+                    ) : isVideo ? (
+                      <VideoThumbnail
+                        fileId={file.id}
+                        thumbnail={file.thumbnail}
+                        name={file.name}
+                        showPlayBadge={true}
+                      />
                     ) : (
                       <div
                         style={{
@@ -267,7 +290,7 @@ export default function Attachments({
                           color: 'var(--text-muted)',
                         }}
                       >
-                        {isVideo ? <Film size={32} color="var(--jns-gold)" /> : <FileText size={32} />}
+                        <FileText size={32} />
                       </div>
                     )}
 

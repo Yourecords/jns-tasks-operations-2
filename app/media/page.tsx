@@ -5,6 +5,12 @@ import { useUser } from '@/components/UserContext';
 import Attachments from '@/components/Attachments';
 import MediaLightboxModal, { MediaItem } from '@/components/MediaLightboxModal';
 import { useUpload } from '@/components/UploadContext';
+import VideoThumbnail from '@/components/VideoThumbnail';
+import {
+  isVideoFile,
+  captureVideoThumbnail,
+  saveThumbnailToServer,
+} from '@/lib/video-thumbnail';
 import {
   Film,
   Folder,
@@ -88,7 +94,9 @@ export default function MediaPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [albumCovers, setAlbumCovers] = useState<Record<string, { count: number; coverId?: string }>>({});
+  const [albumCovers, setAlbumCovers] = useState<
+    Record<string, { count: number; coverId?: string; coverIsVideo?: boolean; coverThumbnail?: string | null }>
+  >({});
   const [isDraggingOverAlbum, setIsDraggingOverAlbum] = useState(false);
   const [isDraggingOverSection, setIsDraggingOverSection] = useState(false);
 
@@ -153,18 +161,26 @@ export default function MediaPage() {
   };
 
   const loadAlbumStats = async (albumList: Album[]) => {
-    const stats: Record<string, { count: number; coverId?: string }> = {};
+    const stats: Record<string, { count: number; coverId?: string; coverIsVideo?: boolean; coverThumbnail?: string | null }> = {};
     for (const alb of albumList.slice(0, 15)) {
       try {
         const res = await fetch(`/api/media?kind=album&target=${alb.id}`);
         const data = await res.json();
         if (data.files) {
-          const firstImage = data.files.find(
-            (f: MediaItem) => f.mime?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif)$/i.test(f.name)
+          const firstMedia = data.files.find(
+            (f: MediaItem) =>
+              f.mime?.startsWith('image/') ||
+              f.mime?.startsWith('video/') ||
+              /\.(jpe?g|png|gif|webp|avif|mp4|mov|webm|m4v|mkv)$/i.test(f.name)
           );
+          const isVid = firstMedia
+            ? (firstMedia.mime?.startsWith('video/') || /\.(mp4|mov|webm|m4v|mkv)$/i.test(firstMedia.name))
+            : false;
           stats[alb.id] = {
             count: data.files.length,
-            coverId: firstImage?.id,
+            coverId: firstMedia?.id,
+            coverIsVideo: isVid,
+            coverThumbnail: firstMedia?.thumbnail,
           };
         }
       } catch (e) {
@@ -187,14 +203,22 @@ export default function MediaPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to load media.');
       setAlbumFiles(data.files || []);
       // Update stats for this album
-      const firstImage = (data.files || []).find(
-        (f: MediaItem) => f.mime?.startsWith('image/') || /\.(jpe?g|png|gif|webp|avif)$/i.test(f.name)
+      const firstMedia = (data.files || []).find(
+        (f: MediaItem) =>
+          f.mime?.startsWith('image/') ||
+          f.mime?.startsWith('video/') ||
+          /\.(jpe?g|png|gif|webp|avif|mp4|mov|webm|m4v|mkv)$/i.test(f.name)
       );
+      const isVid = firstMedia
+        ? (firstMedia.mime?.startsWith('video/') || /\.(mp4|mov|webm|m4v|mkv)$/i.test(firstMedia.name))
+        : false;
       setAlbumCovers((prev) => ({
         ...prev,
         [albumId]: {
           count: (data.files || []).length,
-          coverId: firstImage?.id,
+          coverId: firstMedia?.id,
+          coverIsVideo: isVid,
+          coverThumbnail: firstMedia?.thumbnail,
         },
       }));
     } catch (e: any) {
@@ -274,7 +298,18 @@ export default function MediaPage() {
       targetUrl: (file) => `/api/media?kind=album&target=${currentAlbumId}&name=${encodeURIComponent(file.name)}`,
       targetName: albumName,
       maxBytes: limit,
-      onFileUploaded: () => {
+      onFileUploaded: async (file, result) => {
+        // Automatically extract and persist video thumbnail on upload
+        if (result?.id && isVideoFile(file)) {
+          try {
+            const thumbResult = await captureVideoThumbnail(file, { seekTime: 1.5 });
+            if (thumbResult?.thumbnail) {
+              await saveThumbnailToServer(result.id, thumbResult.thumbnail);
+            }
+          } catch (err) {
+            console.warn('Auto-thumbnail creation on upload failed:', err);
+          }
+        }
         void loadFilesForSelected(currentAlbumId);
       },
       onAllCompleted: () => {
@@ -1023,16 +1058,25 @@ export default function MediaPage() {
                     }}
                   >
                     {coverId ? (
-                      <img
-                        src={`/api/media/${coverId}`}
-                        alt={album.name}
-                        loading="lazy"
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                        }}
-                      />
+                      stats?.coverIsVideo ? (
+                        <VideoThumbnail
+                          fileId={coverId}
+                          thumbnail={stats.coverThumbnail}
+                          name={album.name}
+                          showPlayBadge={false}
+                        />
+                      ) : (
+                        <img
+                          src={`/api/media/${coverId}`}
+                          alt={album.name}
+                          loading="lazy"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                          }}
+                        />
+                      )
                     ) : (
                       <div
                         style={{
@@ -1685,6 +1729,13 @@ export default function MediaPage() {
                             transition: 'transform 0.3s ease',
                           }}
                         />
+                      ) : isVideo ? (
+                        <VideoThumbnail
+                          fileId={file.id}
+                          thumbnail={file.thumbnail}
+                          name={file.name}
+                          showPlayBadge={true}
+                        />
                       ) : (
                         <div
                           style={{
@@ -1695,13 +1746,9 @@ export default function MediaPage() {
                             color: 'var(--text-muted)',
                           }}
                         >
-                          {isVideo ? (
-                            <Film size={38} color="var(--jns-gold)" />
-                          ) : (
-                            <FileText size={38} />
-                          )}
+                          <FileText size={38} />
                           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {isVideo ? 'Video Clip' : 'Document'}
+                            Document
                           </span>
                         </div>
                       )}

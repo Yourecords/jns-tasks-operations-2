@@ -27,6 +27,21 @@ export async function GET(
     if (!file) return new Response("Not found", { status: 404 });
     await checkTarget(file.kind, file.target_id, user);
 
+    if (req.nextUrl.searchParams.get("thumb") === "1" && file.thumbnail?.startsWith("data:image/")) {
+      const parts = file.thumbnail.split(",");
+      const base64 = parts[1];
+      const mimeMatch = parts[0].match(/^data:(image\/\w+);/);
+      const contentType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      const buffer = Buffer.from(base64, "base64");
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+        },
+      });
+    }
+
     const mime = inferMimeType(file.name, file.mime);
     const isDownload = req.nextUrl.searchParams.get("download") === "1";
     const isPreviewable =

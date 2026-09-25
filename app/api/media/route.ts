@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     await checkTarget(kind, target, user);
     const db = await driveDb();
     const files = await db.query(
-      "SELECT id,name,mime,bytes,created_at FROM jns_media_files WHERE kind=$1 AND target_id=$2 ORDER BY created_at DESC",
+      "SELECT id,name,mime,bytes,created_at,thumbnail FROM jns_media_files WHERE kind=$1 AND target_id=$2 ORDER BY created_at DESC",
       [kind, target],
     );
     const resolved = files.rows.map((row) => ({

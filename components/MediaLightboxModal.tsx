@@ -23,6 +23,7 @@ export interface MediaItem {
   mime: string;
   bytes: number;
   created_at?: string;
+  thumbnail?: string | null;
 }
 
 interface MediaLightboxModalProps {
@@ -434,6 +435,7 @@ export default function MediaLightboxModal({
                 autoPlay
                 playsInline
                 preload="auto"
+                poster={file.thumbnail || `/api/media/${file.id}?thumb=1`}
                 onError={(e) => {
                   console.warn('HTML5 Video error occurred:', e);
                   setVideoError(true);
@@ -820,18 +822,29 @@ export default function MediaLightboxModal({
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : isFVideo ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 2,
-                    }}
-                  >
-                    <Film size={18} color="var(--jns-gold)" />
-                    <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600 }}>{fExt.toUpperCase()}</span>
-                  </div>
+                  f.thumbnail || `/api/media/${f.id}?thumb=1` ? (
+                    <img
+                      src={f.thumbnail || `/api/media/${f.id}?thumb=1`}
+                      alt={f.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 2,
+                      }}
+                    >
+                      <Film size={18} color="var(--jns-gold)" />
+                      <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600 }}>{fExt.toUpperCase()}</span>
+                    </div>
+                  )
                 ) : (
                   <span style={{ fontSize: 10, color: 'var(--jns-gold)', fontWeight: 600 }}>
                     {idx + 1}

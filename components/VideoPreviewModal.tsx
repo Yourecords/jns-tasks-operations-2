@@ -18,6 +18,7 @@ interface VideoPreviewModalProps {
   videoUrl: string;
   title?: string;
   subtitle?: string;
+  poster?: string;
 }
 
 export function parseVideoUrl(url: string): {
@@ -103,6 +104,7 @@ export default function VideoPreviewModal({
   videoUrl,
   title = 'Video Preview',
   subtitle,
+  poster,
 }: VideoPreviewModalProps) {
   const [playbackError, setPlaybackError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -323,6 +325,7 @@ export default function VideoPreviewModal({
                   controls
                   autoPlay
                   playsInline
+                  poster={poster || (videoUrl.includes('/api/media/') ? `${videoUrl}?thumb=1` : undefined)}
                   onError={() => setPlaybackError(true)}
                   style={{
                     position: 'absolute',
