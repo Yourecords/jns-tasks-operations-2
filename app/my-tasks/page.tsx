@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, ProductionTask, GraphicDesignTask } from '@/lib/types';
+import { canAccessGraphics } from '@/lib/utils';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
 
@@ -40,13 +41,22 @@ export default function MyTasksPage() {
         setProductions(data.productions);
       }
 
-      const gfxRes = await fetch('/api/graphics');
-      if (gfxRes.ok) {
-        const gfxData = await gfxRes.json();
-        const myGfx = (gfxData.tasks || []).filter(
-          (t: GraphicDesignTask) => currentUser && (t.assignedUserId === currentUser.id || currentUser.role === 'ADMIN')
-        );
-        setGraphicTasks(myGfx);
+      if (canAccessGraphics(currentUser)) {
+        const gfxRes = await fetch('/api/graphics');
+        if (gfxRes.ok) {
+          const gfxData = await gfxRes.json();
+          const myGfx = (gfxData.tasks || []).filter(
+            (t: GraphicDesignTask) =>
+              currentUser &&
+              (t.assignedUserId === currentUser.id ||
+                currentUser.role === 'ADMIN' ||
+                (t.producerId === currentUser.id &&
+                  (t.status === 'READY_FOR_REVIEW' || t.status === 'AWAITING_APPROVAL')))
+          );
+          setGraphicTasks(myGfx);
+        }
+      } else {
+        setGraphicTasks([]);
       }
     } catch (err) {
       console.error(err);
@@ -197,7 +207,7 @@ export default function MyTasksPage() {
       </div>
 
       {/* Assigned Graphic Tasks (if any) */}
-      {graphicTasks.length > 0 && (
+      {canAccessGraphics(currentUser) && graphicTasks.length > 0 && (
         <div
           className="section-panel"
           style={{
@@ -211,7 +221,7 @@ export default function MyTasksPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Palette size={18} color="var(--jns-gold)" />
               <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
-                Graphic Design Tasks Assigned to You ({graphicTasks.length})
+                Graphic Design Tasks & Reviews Assigned to You ({graphicTasks.length})
               </h3>
             </div>
             <Link href="/graphics" className="btn btn-secondary btn-sm" style={{ fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -235,9 +245,16 @@ export default function MyTasksPage() {
                   <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-main)' }}>
                     {gt.title || gt.projectName}
                   </div>
-                  <span className={`badge ${gt.type === 'LONG_TERM' ? 'badge-gold' : 'badge-blue'}`} style={{ fontSize: '10px' }}>
-                    {gt.type === 'LONG_TERM' ? 'PROJECT' : 'REQUEST'}
-                  </span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {(gt.status === 'READY_FOR_REVIEW' || gt.status === 'AWAITING_APPROVAL') && gt.producerId === currentUser?.id && (
+                      <span className="badge badge-gold" style={{ fontSize: '9.5px', fontWeight: 800 }}>
+                        REVIEW REQUIRED
+                      </span>
+                    )}
+                    <span className={`badge ${gt.type === 'LONG_TERM' ? 'badge-gold' : 'badge-blue'}`} style={{ fontSize: '10px' }}>
+                      {gt.type === 'LONG_TERM' ? 'PROJECT' : 'REQUEST'}
+                    </span>
+                  </div>
                 </div>
                 {gt.showName && (
                   <div style={{ fontSize: '11px', color: '#38bdf8', marginTop: '2px', fontWeight: 600 }}>
@@ -250,9 +267,13 @@ export default function MyTasksPage() {
                   </div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11.5px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Status: <strong>{gt.status.replace(/_/g, ' ')}</strong></span>
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    Status: <strong style={{ color: (gt.status === 'READY_FOR_REVIEW' || gt.status === 'AWAITING_APPROVAL') ? 'var(--jns-gold)' : 'inherit' }}>
+                      {gt.status === 'READY_FOR_REVIEW' || gt.status === 'AWAITING_APPROVAL' ? 'Awaiting Approval' : gt.status.replace(/_/g, ' ')}
+                    </strong>
+                  </span>
                   <Link href="/graphics" style={{ color: 'var(--jns-gold)', fontWeight: 600 }}>
-                    View & update →
+                    {(gt.status === 'READY_FOR_REVIEW' || gt.status === 'AWAITING_APPROVAL') && gt.producerId === currentUser?.id ? 'Review & Approve →' : 'View & update →'}
                   </Link>
                 </div>
               </div>

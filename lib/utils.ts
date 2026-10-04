@@ -38,6 +38,28 @@ export function canManageTaxis(user?: { role?: string; jobFunction?: string; id?
 }
 
 /**
+ * Role permissions check for graphics tasks and workflows.
+ * Related users: Admin, Graphic Designers, and Producers.
+ * Users outside these roles cannot view or manage graphics tasks.
+ */
+export function canAccessGraphics(user?: { role?: string; jobFunction?: string; id?: string } | null): boolean {
+  if (!user) return false;
+  return (
+    user.role === 'ADMIN' ||
+    user.role === 'PRODUCER' ||
+    user.jobFunction === 'PRODUCER' ||
+    user.jobFunction === 'HEAD_OF_PRODUCTION' ||
+    user.jobFunction === 'GRAPHIC_DESIGNER' ||
+    user.jobFunction === 'MOTION_GRAPHICS_DESIGNER' ||
+    user.role === 'DESIGNER' ||
+    user.id === 'usr_ilia_graphics' ||
+    user.id === 'usr_yuri_admin' ||
+    user.id === 'usr_zach_producer' ||
+    user.id === 'usr_barbara_producer'
+  );
+}
+
+/**
  * Parses a filming time string (e.g. "10:30", "09:00 AM", "14:00 - 16:30 IDT", "2pm")
  * into total minutes from midnight for chronological sorting.
  * Shoots without a specified time return 99999 to be sorted at the end.

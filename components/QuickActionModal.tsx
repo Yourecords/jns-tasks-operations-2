@@ -20,11 +20,13 @@ import {
   UploadCloud,
   FileText,
   ExternalLink,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useUpload } from './UploadContext';
-import { countWords, isEligibleEditor, findStudioConflict } from '@/lib/utils';
-import { EquipmentPurchaseType } from '@/lib/types';
+import { countWords, isEligibleEditor, findStudioConflict, canAccessGraphics } from '@/lib/utils';
+import { EquipmentPurchaseType, GraphicSubtask, GraphicSubtaskStatus } from '@/lib/types';
 
 function addMinutesToTimeStr(timeStr: string, minutesToAdd: number): string {
   const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
@@ -174,16 +176,167 @@ export default function QuickActionModal({
   const [gfxDescription, setGfxDescription] = useState('');
   const [gfxPriority, setGfxPriority] = useState('NORMAL');
   const [gfxAssignedUserId, setGfxAssignedUserId] = useState('usr_ilia_graphics');
+  const [gfxProducerId, setGfxProducerId] = useState('usr_zach_producer');
+  const [gfxShortTermProducerId, setGfxShortTermProducerId] = useState('usr_yuri_admin');
   const [gfxAssetsText, setGfxAssetsText] = useState('');
   const [gfxReferencesText, setGfxReferencesText] = useState('');
-  const [gfxSubtasks, setGfxSubtasks] = useState<{ id: string; title: string; status: string }[]>([
-    { id: '1', title: 'Concept & Storyboard', status: 'NOT_STARTED' },
-    { id: '2', title: 'Design & Styleframes', status: 'NOT_STARTED' },
-    { id: '3', title: 'Animation & Motion', status: 'NOT_STARTED' },
-    { id: '4', title: 'Implementation & Premiere MOGRT', status: 'NOT_STARTED' },
+  const [gfxMainTasks, setGfxMainTasks] = useState<{
+    id: string;
+    title: string;
+    status: 'NOT_STARTED' | 'STARTED' | 'DONE';
+    subtasks: { id: string; title: string; status: GraphicSubtaskStatus }[];
+  }[]>([
+    {
+      id: 'main_1',
+      title: 'Concept & Storyboard',
+      status: 'NOT_STARTED',
+      subtasks: [
+        { id: 'sub_1_1', title: 'Moodboard & Visual Direction', status: 'NOT_STARTED' },
+        { id: 'sub_1_2', title: 'Storyboard & Script Breakdown', status: 'NOT_STARTED' },
+      ],
+    },
+    {
+      id: 'main_2',
+      title: 'Design & Styleframes',
+      status: 'NOT_STARTED',
+      subtasks: [
+        { id: 'sub_2_1', title: 'Key Visual Styleframes & Typography', status: 'NOT_STARTED' },
+      ],
+    },
+    {
+      id: 'main_3',
+      title: 'Animation & Motion',
+      status: 'NOT_STARTED',
+      subtasks: [
+        { id: 'sub_3_1', title: 'Motion Graphics & 3D Elements', status: 'NOT_STARTED' },
+      ],
+    },
+    {
+      id: 'main_4',
+      title: 'Implementation & Premiere MOGRT',
+      status: 'NOT_STARTED',
+      subtasks: [
+        { id: 'sub_4_1', title: 'Premiere Pro MOGRT Package & Audio Sync', status: 'NOT_STARTED' },
+      ],
+    },
   ]);
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-  const [newSubtaskStatus, setNewSubtaskStatus] = useState('NOT_STARTED');
+  const [newMainTaskTitle, setNewMainTaskTitle] = useState('');
+  const [newMainTaskStatus, setNewMainTaskStatus] = useState<'NOT_STARTED' | 'STARTED' | 'DONE'>('NOT_STARTED');
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Record<string, boolean>>({});
+
+  const toggleTaskCollapse = (mainTaskId: string) => {
+    setCollapsedTaskIds((prev) => ({
+      ...prev,
+      [mainTaskId]: !prev[mainTaskId],
+    }));
+  };
+
+  const handleCollapseAll = () => {
+    const allCollapsed: Record<string, boolean> = {};
+    gfxMainTasks.forEach((m) => {
+      allCollapsed[m.id] = true;
+    });
+    setCollapsedTaskIds(allCollapsed);
+  };
+
+  const handleExpandAll = () => {
+    setCollapsedTaskIds({});
+  };
+
+  const handleUpdateMainTaskTitle = (mainTaskId: string, title: string) => {
+    setGfxMainTasks((prev) =>
+      prev.map((m) => (m.id === mainTaskId ? { ...m, title } : m))
+    );
+  };
+
+  const handleUpdateMainTaskStatus = (mainTaskId: string, status: 'NOT_STARTED' | 'STARTED' | 'DONE') => {
+    setGfxMainTasks((prev) =>
+      prev.map((m) => (m.id === mainTaskId ? { ...m, status } : m))
+    );
+  };
+
+  const handleRemoveMainTask = (mainTaskId: string) => {
+    setGfxMainTasks((prev) => prev.filter((m) => m.id !== mainTaskId));
+  };
+
+  const handleAddMainTask = () => {
+    if (!newMainTaskTitle.trim()) return;
+    setGfxMainTasks((prev) => [
+      ...prev,
+      {
+        id: `main_${Date.now()}`,
+        title: newMainTaskTitle.trim(),
+        status: newMainTaskStatus,
+        subtasks: [],
+      },
+    ]);
+    setNewMainTaskTitle('');
+    setNewMainTaskStatus('NOT_STARTED');
+  };
+
+  const handleAddSubtaskToMain = (mainTaskId: string, title = '') => {
+    setCollapsedTaskIds((prev) => ({ ...prev, [mainTaskId]: false })); // Ensure expanded when adding
+    setGfxMainTasks((prev) =>
+      prev.map((m) => {
+        if (m.id === mainTaskId) {
+          return {
+            ...m,
+            subtasks: [
+              ...m.subtasks,
+              {
+                id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                title,
+                status: 'NOT_STARTED' as GraphicSubtaskStatus,
+              },
+            ],
+          };
+        }
+        return m;
+      })
+    );
+  };
+
+  const handleUpdateSubtaskTitle = (mainTaskId: string, subtaskId: string, title: string) => {
+    setGfxMainTasks((prev) =>
+      prev.map((m) => {
+        if (m.id === mainTaskId) {
+          return {
+            ...m,
+            subtasks: m.subtasks.map((s) => (s.id === subtaskId ? { ...s, title } : s)),
+          };
+        }
+        return m;
+      })
+    );
+  };
+
+  const handleUpdateSubtaskStatus = (mainTaskId: string, subtaskId: string, status: GraphicSubtaskStatus) => {
+    setGfxMainTasks((prev) =>
+      prev.map((m) => {
+        if (m.id === mainTaskId) {
+          return {
+            ...m,
+            subtasks: m.subtasks.map((s) => (s.id === subtaskId ? { ...s, status } : s)),
+          };
+        }
+        return m;
+      })
+    );
+  };
+
+  const handleRemoveSubtask = (mainTaskId: string, subtaskId: string) => {
+    setGfxMainTasks((prev) =>
+      prev.map((m) => {
+        if (m.id === mainTaskId) {
+          return {
+            ...m,
+            subtasks: m.subtasks.filter((s) => s.id !== subtaskId),
+          };
+        }
+        return m;
+      })
+    );
+  };
 
   // Graphics Media Uploads (target album: 'graphics media')
   const [uploadedAssetFiles, setUploadedAssetFiles] = useState<
@@ -291,12 +444,50 @@ export default function QuickActionModal({
   }, []);
 
   useEffect(() => {
+    if (activeTab === 'GRAPHICS' && !canAccessGraphics(currentUser)) {
+      setActiveTab('EPISODE');
+    }
+  }, [activeTab, currentUser]);
+
+  useEffect(() => {
     if (currentUser) {
       if (!epProducerId) setEpProducerId(currentUser.id);
       if (!pilotProducerId) setPilotProducerId(currentUser.id);
       if (!rentalProducerId) setRentalProducerId(currentUser.id);
+      if (currentUser.role === 'PRODUCER' || currentUser.role === 'ADMIN') {
+        if (!gfxProducerId || gfxProducerId === 'usr_zach_producer') {
+          setGfxProducerId(currentUser.id);
+        }
+      }
     }
   }, [currentUser]);
+
+  // Producers list for Graphics Requests: Yuri, Zach, Barbara
+  const producerOptions = React.useMemo(() => {
+    const producerOrder: Record<string, number> = {
+      usr_yuri_admin: 1,
+      usr_zach_producer: 2,
+      usr_barbara_producer: 3,
+    };
+    const filtered = allUsers
+      .filter(
+        (u) =>
+          u.role === 'PRODUCER' ||
+          u.role === 'ADMIN' ||
+          u.id === 'usr_zach_producer' ||
+          u.id === 'usr_barbara_producer' ||
+          u.id === 'usr_yuri_admin'
+      )
+      .sort((a, b) => (producerOrder[a.id] ?? 99) - (producerOrder[b.id] ?? 99));
+
+    if (filtered.length > 0) return filtered;
+
+    return [
+      { id: 'usr_yuri_admin', name: 'Yuri', fullName: 'Yuri Skvirski', role: 'ADMIN', positionDisplay: 'Admin' },
+      { id: 'usr_zach_producer', name: 'Zach', fullName: 'Zach Sicherman', role: 'PRODUCER', positionDisplay: 'Producer' },
+      { id: 'usr_barbara_producer', name: 'Barbara', fullName: 'Barbara Hanimov', role: 'PRODUCER', positionDisplay: 'Producer' },
+    ];
+  }, [allUsers]);
 
   // Real-time Studio Conflict Detection
   const epConflict = React.useMemo(() => {
@@ -673,6 +864,27 @@ export default function QuickActionModal({
           })),
       ];
 
+      // Prepare subtasks payload
+      const formattedSubtasks: GraphicSubtask[] = [];
+      gfxMainTasks.forEach((mTask) => {
+        formattedSubtasks.push({
+          id: mTask.id,
+          title: mTask.title,
+          status: mTask.status as GraphicSubtaskStatus,
+          isMainTask: true,
+          subtasks: mTask.subtasks.map((st) => ({
+            id: st.id,
+            title: st.title,
+            status: st.status,
+            isMainTask: false,
+            parentId: mTask.id,
+            mainTaskTitle: mTask.title,
+            createdAt: new Date().toISOString(),
+          })),
+          createdAt: new Date().toISOString(),
+        });
+      });
+
       const res = await fetch('/api/graphics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -685,8 +897,9 @@ export default function QuickActionModal({
           timing: gfxTiming || undefined,
           description: gfxDescription,
           priority: gfxPriority,
-          assignedUserId: gfxAssignedUserId,
-          subtasks: gfxType === 'LONG_TERM' ? gfxSubtasks : [],
+          assignedUserId: gfxType === 'LONG_TERM' ? gfxProducerId : gfxShortTermProducerId,
+          producerId: gfxType === 'LONG_TERM' ? gfxProducerId : gfxShortTermProducerId,
+          subtasks: gfxType === 'LONG_TERM' ? formattedSubtasks : [],
           assets: parsedAssets,
           references: parsedReferences,
         }),
@@ -779,18 +992,20 @@ export default function QuickActionModal({
               </button>
             </>
           )}
-          <button
-            className={`filter-tab ${activeTab === 'GRAPHICS' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('GRAPHICS'); setErrorMsg(''); }}
-            style={{
-              borderColor: activeTab === 'GRAPHICS' ? 'var(--jns-gold)' : undefined,
-              color: activeTab === 'GRAPHICS' ? 'var(--jns-gold)' : undefined,
-              fontWeight: 700,
-            }}
-          >
-            <Palette size={13} style={{ display: 'inline', marginRight: '4px' }} />
-            New Graphics Request
-          </button>
+          {canAccessGraphics(currentUser) && (
+            <button
+              className={`filter-tab ${activeTab === 'GRAPHICS' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('GRAPHICS'); setErrorMsg(''); }}
+              style={{
+                borderColor: activeTab === 'GRAPHICS' ? 'var(--jns-gold)' : undefined,
+                color: activeTab === 'GRAPHICS' ? 'var(--jns-gold)' : undefined,
+                fontWeight: 700,
+              }}
+            >
+              <Palette size={13} style={{ display: 'inline', marginRight: '4px' }} />
+              New Graphics Request
+            </button>
+          )}
           <button
             className={`filter-tab ${activeTab === 'EQUIPMENT' ? 'active' : ''}`}
             onClick={() => { setActiveTab('EQUIPMENT'); setErrorMsg(''); }}
@@ -2159,7 +2374,7 @@ export default function QuickActionModal({
           )}
 
           {/* TAB: NEW GRAPHICS REQUEST (Item: Immediate Request vs Long-Term Project) */}
-          {activeTab === 'GRAPHICS' && (
+          {activeTab === 'GRAPHICS' && canAccessGraphics(currentUser) && (
             <form onSubmit={handleCreateGraphics} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {/* Type Toggle: Immediate Show Request vs Long-Term Project */}
               <div
@@ -2222,7 +2437,7 @@ export default function QuickActionModal({
                   }}
                 >
                   <Palette size={14} />
-                  <span>Long-Term Project (8-Stage Pipeline)</span>
+                  <span>Long-Term Project (Subtasks & Milestones)</span>
                 </button>
               </div>
 
@@ -2541,26 +2756,20 @@ export default function QuickActionModal({
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <div className="form-group">
-                      <label className="form-label">Assigned Designer</label>
+                      <label className="form-label">
+                        Assigned Producer <span className="req">*</span>
+                      </label>
                       <select
                         className="form-select"
-                        value={gfxAssignedUserId}
-                        onChange={(e) => setGfxAssignedUserId(e.target.value)}
+                        value={gfxShortTermProducerId}
+                        onChange={(e) => setGfxShortTermProducerId(e.target.value)}
+                        required
                       >
-                        {allUsers
-                          .filter((u) => u.jobFunction === 'MOTION_GRAPHICS_DESIGNER' || u.jobFunction === 'GRAPHIC_DESIGNER' || u.role === 'ADMIN')
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.fullName || u.name} ({u.positionDisplay || u.jobFunction})
-                            </option>
-                          ))}
-                        {allUsers
-                          .filter((u) => u.jobFunction !== 'MOTION_GRAPHICS_DESIGNER' && u.jobFunction !== 'GRAPHIC_DESIGNER' && u.role !== 'ADMIN')
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.fullName || u.name} ({u.positionDisplay || u.role})
-                            </option>
-                          ))}
+                        {producerOptions.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.fullName})
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -2618,15 +2827,18 @@ export default function QuickActionModal({
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">Lead Designer</label>
+                      <label className="form-label">
+                        Assigned Producer <span className="req">*</span>
+                      </label>
                       <select
                         className="form-select"
-                        value={gfxAssignedUserId}
-                        onChange={(e) => setGfxAssignedUserId(e.target.value)}
+                        value={gfxProducerId}
+                        onChange={(e) => setGfxProducerId(e.target.value)}
+                        required
                       >
-                        {allUsers.map((u) => (
+                        {producerOptions.map((u) => (
                           <option key={u.id} value={u.id}>
-                            {u.fullName || u.name} ({u.positionDisplay || u.jobFunction})
+                            {u.name} ({u.fullName})
                           </option>
                         ))}
                       </select>
@@ -2646,136 +2858,409 @@ export default function QuickActionModal({
                     </div>
                   </div>
 
-                  {/* 8-STAGE SUBTASKS BUILDER */}
+                  {/* MAIN TASKS & 8-STAGE SUBTASKS BUILDER */}
                   <div
                     style={{
                       background: 'var(--bg-card-subtle)',
-                      padding: '10px 12px',
+                      padding: '12px',
                       borderRadius: '8px',
                       border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--jns-gold)' }}>
-                        Project Subtasks & Status Milestones ({gfxSubtasks.length})
-                      </span>
-                      <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                        Status stages: not started / concept / design / animation / implementation / finalizing / audio / done
-                      </span>
-                    </div>
-
-                    {/* Subtask list */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
-                      {gfxSubtasks.map((sub, idx) => (
-                        <div
-                          key={sub.id}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--jns-gold)' }}>
+                          Project Subtasks & Status Milestones
+                        </span>
+                        <span
                           style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 170px 32px',
-                            gap: '6px',
-                            alignItems: 'center',
+                            fontSize: '10px',
+                            padding: '2px 7px',
+                            borderRadius: '10px',
+                            background: 'rgba(218, 165, 32, 0.15)',
+                            color: 'var(--jns-gold)',
+                            fontWeight: 600,
                           }}
                         >
-                          <input
-                            type="text"
-                            className="form-input"
-                            value={sub.title}
-                            onChange={(e) => {
-                              const updated = [...gfxSubtasks];
-                              updated[idx].title = e.target.value;
-                              setGfxSubtasks(updated);
-                            }}
-                            style={{ fontSize: '12px', padding: '5px 8px' }}
-                          />
-                          <select
-                            className="form-select"
-                            value={sub.status}
-                            onChange={(e) => {
-                              const updated = [...gfxSubtasks];
-                              updated[idx].status = e.target.value;
-                              setGfxSubtasks(updated);
-                            }}
-                            style={{ fontSize: '11px', padding: '5px 6px' }}
-                          >
-                            <option value="NOT_STARTED">Not Started</option>
-                            <option value="CONCEPT">Concept</option>
-                            <option value="DESIGN">Design</option>
-                            <option value="ANIMATION">Animation</option>
-                            <option value="IMPLEMENTATION">Implementation</option>
-                            <option value="FINALIZING">Finalizing</option>
-                            <option value="AUDIO">Audio</option>
-                            <option value="DONE">Done</option>
-                          </select>
+                          {gfxMainTasks.length} Main Tasks • {gfxMainTasks.reduce((acc, m) => acc + m.subtasks.length, 0)} Subtasks
+                        </span>
+                        {gfxMainTasks.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setGfxSubtasks(gfxSubtasks.filter((_, i) => i !== idx));
-                            }}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: '#f87171',
-                              cursor: 'pointer',
-                              padding: '4px',
-                            }}
-                            title="Remove subtask"
+                            onClick={
+                              gfxMainTasks.every((m) => collapsedTaskIds[m.id])
+                                ? handleExpandAll
+                                : handleCollapseAll
+                            }
+                            className="btn btn-secondary btn-xs"
+                            style={{ height: '22px', fontSize: '10px', padding: '0 6px', gap: '3px' }}
+                            title="Collapse or Expand all subtasks"
                           >
-                            <Trash2 size={13} />
+                            {gfxMainTasks.every((m) => collapsedTaskIds[m.id]) ? 'Expand All' : 'Collapse All'}
                           </button>
-                        </div>
-                      ))}
+                        )}
+                      </div>
+                      <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                        Main: <b>Started / Not Started / Done</b> • Sub: <b>8 Stages</b>
+                      </span>
                     </div>
 
-                    {/* Add new subtask row */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 170px 60px', gap: '6px', alignItems: 'center' }}>
+                    {/* Main Tasks List (Collapsible Subtasks) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+                      {gfxMainTasks.map((mainTask, mIdx) => {
+                        const isCollapsed = !!collapsedTaskIds[mainTask.id];
+                        return (
+                          <div
+                            key={mainTask.id}
+                            style={{
+                              background: 'var(--bg-card)',
+                              borderRadius: '7px',
+                              border: '1px solid var(--border-subtle)',
+                              padding: '9px 10px',
+                            }}
+                          >
+                            {/* Main Task Header Row */}
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'auto auto auto 1fr 140px auto auto',
+                                gap: '6px',
+                                alignItems: 'center',
+                                marginBottom: !isCollapsed ? '8px' : '0px',
+                              }}
+                            >
+                              {/* Collapse / Expand Toggle Button */}
+                              <button
+                                type="button"
+                                onClick={() => toggleTaskCollapse(mainTask.id)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  color: 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  borderRadius: '4px',
+                                }}
+                                title={isCollapsed ? 'Expand subtasks' : 'Collapse subtasks'}
+                              >
+                                {isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                              </button>
+
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.04em',
+                                  padding: '3px 6px',
+                                  borderRadius: '4px',
+                                  background:
+                                    mainTask.status === 'DONE'
+                                      ? 'rgba(34, 197, 94, 0.15)'
+                                      : mainTask.status === 'STARTED'
+                                      ? 'rgba(56, 189, 248, 0.15)'
+                                      : 'rgba(148, 163, 184, 0.12)',
+                                  color:
+                                    mainTask.status === 'DONE'
+                                      ? '#22c55e'
+                                      : mainTask.status === 'STARTED'
+                                      ? '#38bdf8'
+                                      : 'var(--text-muted)',
+                                  fontWeight: 700,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Main #{mIdx + 1}
+                              </span>
+
+                              {/* Clickable Subtask Count Badge */}
+                              <button
+                                type="button"
+                                onClick={() => toggleTaskCollapse(mainTask.id)}
+                                style={{
+                                  fontSize: '10px',
+                                  padding: '2px 7px',
+                                  borderRadius: '10px',
+                                  background: isCollapsed ? 'rgba(218, 165, 32, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                                  border: '1px solid var(--border-subtle)',
+                                  color: isCollapsed ? 'var(--jns-gold)' : 'var(--text-muted)',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={isCollapsed ? 'Click to expand subtasks' : 'Click to collapse subtasks'}
+                              >
+                                {mainTask.subtasks.length} subtask{mainTask.subtasks.length === 1 ? '' : 's'}
+                                <span style={{ fontSize: '9px' }}>{isCollapsed ? '▸' : '▾'}</span>
+                              </button>
+
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={mainTask.title}
+                                onChange={(e) => handleUpdateMainTaskTitle(mainTask.id, e.target.value)}
+                                placeholder="Main task milestone title..."
+                                style={{ fontSize: '12px', fontWeight: 600, padding: '4px 8px', height: '30px' }}
+                              />
+
+                              {/* Main Task Dropdown Menu: Started / Not Started / Done */}
+                              <select
+                                className="form-select"
+                                value={mainTask.status}
+                                onChange={(e) =>
+                                  handleUpdateMainTaskStatus(
+                                    mainTask.id,
+                                    e.target.value as 'NOT_STARTED' | 'STARTED' | 'DONE'
+                                  )
+                                }
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  padding: '4px 6px',
+                                  height: '30px',
+                                  color:
+                                    mainTask.status === 'DONE'
+                                      ? '#22c55e'
+                                      : mainTask.status === 'STARTED'
+                                      ? '#38bdf8'
+                                      : 'var(--text-muted)',
+                                  borderColor:
+                                    mainTask.status === 'DONE'
+                                      ? '#22c55e'
+                                      : mainTask.status === 'STARTED'
+                                      ? '#38bdf8'
+                                      : 'var(--border-subtle)',
+                                }}
+                              >
+                                <option value="NOT_STARTED">Not Started</option>
+                                <option value="STARTED">Started</option>
+                                <option value="DONE">Done</option>
+                              </select>
+
+                              {/* + Subtask Button (adds subtask & ensures expanded) */}
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-xs"
+                                onClick={() => handleAddSubtaskToMain(mainTask.id)}
+                                title="Add subtask under this main task (unfolds subtasks)"
+                                style={{
+                                  height: '30px',
+                                  fontSize: '11px',
+                                  padding: '0 8px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                <Plus size={11} /> Subtask
+                              </button>
+
+                              {/* Delete Main Task */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMainTask(mainTask.id)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#f87171',
+                                  cursor: 'pointer',
+                                  padding: '5px',
+                                  borderRadius: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                }}
+                                title="Remove main task"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+
+                            {/* Collapsible Nested Sub Tasks */}
+                            {!isCollapsed && (
+                              <div
+                                style={{
+                                  marginLeft: '12px',
+                                  paddingLeft: '12px',
+                                  borderLeft: '2px solid var(--border-subtle)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '5px',
+                                  paddingTop: '2px',
+                                }}
+                              >
+                                {mainTask.subtasks.length === 0 ? (
+                                  <div
+                                    style={{
+                                      fontSize: '11px',
+                                      color: 'var(--text-muted)',
+                                      fontStyle: 'italic',
+                                      padding: '4px 6px',
+                                      background: 'rgba(255, 255, 255, 0.02)',
+                                      borderRadius: '4px',
+                                      border: '1px dashed var(--border-subtle)',
+                                    }}
+                                  >
+                                    No subtasks yet under this milestone. Click &quot;+ Add subtask&quot; below to add one.
+                                  </div>
+                                ) : (
+                                  mainTask.subtasks.map((sub) => (
+                                    <div
+                                      key={sub.id}
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'auto 1fr 150px auto',
+                                        gap: '6px',
+                                        alignItems: 'center',
+                                      }}
+                                    >
+                                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>↳</span>
+                                      <input
+                                        type="text"
+                                        className="form-input"
+                                        value={sub.title}
+                                        onChange={(e) => handleUpdateSubtaskTitle(mainTask.id, sub.id, e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddSubtaskToMain(mainTask.id, '');
+                                          }
+                                        }}
+                                        placeholder="Subtask title (e.g. Concept, 3D Render, Audio)..."
+                                        style={{ fontSize: '11.5px', padding: '3px 8px', height: '27px' }}
+                                      />
+                                      {/* Sub Task 8-Stage Dropdown Menu */}
+                                      <select
+                                        className="form-select"
+                                        value={sub.status}
+                                        onChange={(e) =>
+                                          handleUpdateSubtaskStatus(
+                                            mainTask.id,
+                                            sub.id,
+                                            e.target.value as GraphicSubtaskStatus
+                                          )
+                                        }
+                                        style={{
+                                          fontSize: '11px',
+                                          padding: '3px 6px',
+                                          height: '27px',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        <option value="NOT_STARTED">Not Started</option>
+                                        <option value="CONCEPT">Concept</option>
+                                        <option value="DESIGN">Design</option>
+                                        <option value="ANIMATION">Animation</option>
+                                        <option value="IMPLEMENTATION">Implementation</option>
+                                        <option value="FINALIZING">Finalizing</option>
+                                        <option value="AUDIO">Audio</option>
+                                        <option value="DONE">Done</option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveSubtask(mainTask.id, sub.id)}
+                                        style={{
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: 'var(--text-muted)',
+                                          cursor: 'pointer',
+                                          padding: '4px',
+                                          borderRadius: '4px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                        }}
+                                        title="Remove subtask"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  ))
+                                )}
+
+                                {/* Inline option to add subtasks to this task */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddSubtaskToMain(mainTask.id, '')}
+                                    style={{
+                                      background: 'rgba(218, 165, 32, 0.08)',
+                                      border: '1px dashed rgba(218, 165, 32, 0.3)',
+                                      borderRadius: '4px',
+                                      color: 'var(--jns-gold)',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      padding: '3px 8px',
+                                    }}
+                                  >
+                                    <Plus size={11} /> Add subtask to {mainTask.title || 'milestone'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Add New Main Task Milestone Row */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 140px 125px',
+                        gap: '6px',
+                        alignItems: 'center',
+                        background: 'var(--bg-card)',
+                        padding: '7px 9px',
+                        borderRadius: '6px',
+                        border: '1px dashed var(--border-subtle)',
+                      }}
+                    >
                       <input
                         type="text"
                         className="form-input"
-                        placeholder="Add new subtask title..."
-                        value={newSubtaskTitle}
-                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        placeholder="Add new main task milestone..."
+                        value={newMainTaskTitle}
+                        onChange={(e) => setNewMainTaskTitle(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newSubtaskTitle.trim()) {
+                          if (e.key === 'Enter') {
                             e.preventDefault();
-                            setGfxSubtasks([
-                              ...gfxSubtasks,
-                              { id: `sub_${Date.now()}`, title: newSubtaskTitle.trim(), status: newSubtaskStatus },
-                            ]);
-                            setNewSubtaskTitle('');
+                            handleAddMainTask();
                           }
                         }}
-                        style={{ fontSize: '12px', padding: '5px 8px' }}
+                        style={{ fontSize: '12px', padding: '4px 8px', height: '29px' }}
                       />
                       <select
                         className="form-select"
-                        value={newSubtaskStatus}
-                        onChange={(e) => setNewSubtaskStatus(e.target.value)}
-                        style={{ fontSize: '11px', padding: '5px 6px' }}
+                        value={newMainTaskStatus}
+                        onChange={(e) => setNewMainTaskStatus(e.target.value as 'NOT_STARTED' | 'STARTED' | 'DONE')}
+                        style={{ fontSize: '11px', padding: '4px 6px', height: '29px' }}
                       >
                         <option value="NOT_STARTED">Not Started</option>
-                        <option value="CONCEPT">Concept</option>
-                        <option value="DESIGN">Design</option>
-                        <option value="ANIMATION">Animation</option>
-                        <option value="IMPLEMENTATION">Implementation</option>
-                        <option value="FINALIZING">Finalizing</option>
-                        <option value="AUDIO">Audio</option>
+                        <option value="STARTED">Started</option>
                         <option value="DONE">Done</option>
                       </select>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (newSubtaskTitle.trim()) {
-                            setGfxSubtasks([
-                              ...gfxSubtasks,
-                              { id: `sub_${Date.now()}`, title: newSubtaskTitle.trim(), status: newSubtaskStatus },
-                            ]);
-                            setNewSubtaskTitle('');
-                          }
-                        }}
+                        onClick={handleAddMainTask}
                         className="btn btn-secondary btn-xs"
-                        style={{ height: '31px', fontSize: '11px' }}
+                        style={{
+                          height: '29px',
+                          fontSize: '11px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                        }}
                       >
-                        <Plus size={12} /> Add
+                        <Plus size={12} /> Add Main Task
                       </button>
                     </div>
                   </div>

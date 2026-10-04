@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useUser } from '@/components/UserContext';
 import { Production, ProductionTask, GraphicDesignTask } from '@/lib/types';
-import { sortProductionsByFilmingSchedule } from '@/lib/utils';
+import { sortProductionsByFilmingSchedule, canAccessGraphics } from '@/lib/utils';
 import BlockedTaskModal from '@/components/BlockedTaskModal';
 import UpdateScheduleModal from '@/components/UpdateScheduleModal';
 
@@ -41,19 +41,22 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const [prodRes, gfxRes] = await Promise.all([
-        fetch('/api/productions'),
-        fetch('/api/graphics'),
-      ]);
+      const calls: Promise<Response>[] = [fetch('/api/productions')];
+      if (canAccessGraphics(currentUser)) {
+        calls.push(fetch('/api/graphics'));
+      }
+      const [prodRes, gfxRes] = await Promise.all(calls);
       const prodData = await prodRes.json();
       if (prodData.productions) {
         setProductions(prodData.productions);
       }
-      if (gfxRes.ok) {
+      if (gfxRes && gfxRes.ok) {
         const gfxData = await gfxRes.json();
         if (gfxData.tasks) {
           setGraphicTasks(gfxData.tasks);
         }
+      } else if (!canAccessGraphics(currentUser)) {
+        setGraphicTasks([]);
       }
     } catch (err) {
       console.error('Error fetching dashboard productions and graphics', err);
@@ -78,7 +81,7 @@ export default function DashboardPage() {
     }
     const interval = setInterval(fetchDashboardData, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentUser]);
 
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
@@ -141,12 +144,15 @@ export default function DashboardPage() {
   const upcomingFilming = sortProductionsByFilmingSchedule(upcomingFilmingRaw);
 
   // Active & Overdue Graphic Design Tasks representation
-  const activeGraphicTasks = graphicTasks.filter(
-    (t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED'
-  );
+  const canViewGraphics = canAccessGraphics(currentUser);
+  const activeGraphicTasks = canViewGraphics
+    ? graphicTasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED')
+    : [];
   const activeImmediateCount = activeGraphicTasks.filter((t) => t.type === 'IMMEDIATE').length;
   const activeLongTermCount = activeGraphicTasks.filter((t) => t.type === 'LONG_TERM').length;
-  const overdueGraphicTasks = activeGraphicTasks.filter((t) => t.deadline && t.deadline < todayStr);
+  const overdueGraphicTasks = canViewGraphics
+    ? activeGraphicTasks.filter((t) => t.deadline && t.deadline < todayStr)
+    : [];
 
   // Fast 1-click status updater for task
   const handleQuickStatusChange = async (taskId: string, newStatus: string, taskTitle: string) => {
@@ -235,22 +241,24 @@ export default function DashboardPage() {
           <div className="metric-subtitle">Producer reviews / Final signs</div>
         </div>
 
-        <Link href="/graphics" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="metric-card" style={{ borderLeft: '4px solid #a855f7', height: '100%', cursor: 'pointer', transition: 'transform 0.15s ease' }}>
-            <div className="metric-header">
-              <span className="metric-title">Graphics Ops</span>
-              <Palette size={16} color="#c084fc" />
+        {canViewGraphics && (
+          <Link href="/graphics" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div className="metric-card" style={{ borderLeft: '4px solid #a855f7', height: '100%', cursor: 'pointer', transition: 'transform 0.15s ease' }}>
+              <div className="metric-header">
+                <span className="metric-title">Graphics Ops</span>
+                <Palette size={16} color="#c084fc" />
+              </div>
+              <div className="metric-value" style={{ color: activeGraphicTasks.length > 0 ? '#c084fc' : 'var(--text-main)' }}>
+                {activeGraphicTasks.length}
+              </div>
+              <div className="metric-subtitle">
+                {activeGraphicTasks.length > 0
+                  ? `${activeImmediateCount} immediate • ${activeLongTermCount} long-term`
+                  : 'All graphics on track'}
+              </div>
             </div>
-            <div className="metric-value" style={{ color: activeGraphicTasks.length > 0 ? '#c084fc' : 'var(--text-main)' }}>
-              {activeGraphicTasks.length}
-            </div>
-            <div className="metric-subtitle">
-              {activeGraphicTasks.length > 0
-                ? `${activeImmediateCount} immediate • ${activeLongTermCount} long-term`
-                : 'All graphics on track'}
-            </div>
-          </div>
-        </Link>
+          </Link>
+        )}
       </div>
 
       {/* Overdue Warning Callout (if any, including Graphic tasks) */}
@@ -586,7 +594,8 @@ export default function DashboardPage() {
       </div>
 
       {/* SECTION: GRAPHIC DESIGN OPERATIONS (Compact Representation) */}
-      <div className="section-panel" style={{ marginBottom: '1.5rem' }}>
+      {canViewGraphics && (
+        <div className="section-panel" style={{ marginBottom: '1.5rem' }}>
         <div className="section-panel-header">
           <div className="section-panel-title">
             <Palette size={17} color="#c084fc" />
@@ -754,6 +763,7 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* SECTION 3: IN PROGRESS ACTIVE PRODUCTIONS PIPELINE */}
       <div className="section-panel">

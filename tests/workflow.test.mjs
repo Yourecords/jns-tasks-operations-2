@@ -26,7 +26,7 @@ import {
 } from '../lib/workflow';
 import { getDb, resetToSeedData, countWords, getDbAsync, saveDbAsync } from '../lib/db';
 import { updateProductionWithLock, insertProductionWithLock, registerDbAccess } from '../lib/pg';
-import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict, requiresStudio, isStudioProduction, isRemoteProduction } from '../lib/utils';
+import { parseFilmingTimeToMinutes, sortProductionsByFilmingSchedule, findStudioConflict, requiresStudio, isStudioProduction, isRemoteProduction, canAccessGraphics } from '../lib/utils';
 import { formatDurationMinutes, getEventSlotSpan, buildDayColumnSchedule, TIME_SLOTS } from '../lib/calendarUtils';
 registerDbAccess({ getDbAsync, saveDbAsync });
 import { GET as getAuthMe, POST as postAuthMe } from '../app/api/auth/me/route';
@@ -1121,7 +1121,7 @@ try {
     {
       showId: 'show_the_quad',
       episodeNumber: '990',
-      filmingDate: '2026-10-04',
+      filmingDate: '2026-11-04',
       filmingTime: '10:00 - 11:30',
       location: 'IN_STUDIO',
       priority: 'NORMAL',
@@ -1169,14 +1169,14 @@ try {
     },
     body: JSON.stringify({
       action: 'RESCHEDULE_FILMING',
-      filmingDate: '2026-10-05',
+      filmingDate: '2026-11-05',
       filmingTime: '15:00 - 16:30',
     }),
   });
   const rescheduleRes = await patchProduction(rescheduleReq, { params: { id: testEpisode.id } });
   const rescheduleData = await rescheduleRes.json();
   assert.strictEqual(rescheduleRes.status, 200, 'Reschedule filming must return 200');
-  assert.strictEqual(rescheduleData.production.filmingDate, '2026-10-05', 'Filming date must be updated');
+  assert.strictEqual(rescheduleData.production.filmingDate, '2026-11-05', 'Filming date must be updated');
   assert.strictEqual(rescheduleData.production.filmingTime, '15:00 - 16:30', 'Filming time must be updated');
 
   // Verify filming tasks dueDate was updated
@@ -1184,7 +1184,7 @@ try {
     t.stageName === 'FILMING' || t.title.toLowerCase().includes('filming')
   );
   for (const t of filmingTasks) {
-    assert.strictEqual(t.dueDate, '2026-10-05', 'Filming task dueDate must match rescheduled filming date');
+    assert.strictEqual(t.dueDate, '2026-11-05', 'Filming task dueDate must match rescheduled filming date');
   }
 
   // 4. Physical Studio Double-Booking Prevention
@@ -1203,7 +1203,7 @@ try {
     producerUser
   );
 
-  // Attempt to drag/reschedule conflictingEpisode to 2026-10-05 15:30 (overlaps with testEpisode)
+  // Attempt to drag/reschedule conflictingEpisode to 2026-11-05 15:30 (overlaps with testEpisode)
   const conflictReq = new NextRequest(`http://localhost:3000/api/productions/${conflictingEpisode.id}`, {
     method: 'PATCH',
     headers: {
@@ -1212,7 +1212,7 @@ try {
     },
     body: JSON.stringify({
       action: 'RESCHEDULE_FILMING',
-      filmingDate: '2026-10-05',
+      filmingDate: '2026-11-05',
       filmingTime: '15:30 - 16:30',
     }),
   });
@@ -1733,8 +1733,47 @@ try {
   assert.strictEqual(longData.task.subtasks.length, 8, 'Must have all 8 subtasks');
   const longTaskId = longData.task.id;
 
-  // 3. Update subtask stage and task status
+  // 3. Update subtask stage and task status with note to responsible producer
   const patchReq = new NextRequest(`http://localhost:3000/api/graphics/${immTaskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${adminUser.id}`,
+    },
+    body: JSON.stringify({
+      status: 'IN_PROGRESS',
+      statusNote: 'Started drafting graphics package, notified producer.',
+    }),
+  });
+  const patchRes = await patchGraphicItem(patchReq, { params: Promise.resolve({ id: immTaskId }) });
+  assert.strictEqual(patchRes.status, 200, 'Updating task status with note must succeed');
+  const patchData = await patchRes.json();
+  assert.strictEqual(patchData.task.status, 'IN_PROGRESS');
+  assert.strictEqual(patchData.task.latestNote, 'Started drafting graphics package, notified producer.');
+  assert(Array.isArray(patchData.task.statusNotes), 'statusNotes must be an array');
+  assert.strictEqual(patchData.task.statusNotes.length, 1);
+  assert.strictEqual(patchData.task.statusNotes[0].note, 'Started drafting graphics package, notified producer.');
+  assert.strictEqual(patchData.task.statusNotes[0].toStatus, 'IN_PROGRESS');
+
+  // Verify direct ad-hoc note to producer
+  const adhocReq = new NextRequest(`http://localhost:3000/api/graphics/${immTaskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${adminUser.id}`,
+    },
+    body: JSON.stringify({
+      note: 'Question for producer: Is 16:9 vertical 9:16 format also needed?',
+    }),
+  });
+  const adhocRes = await patchGraphicItem(adhocReq, { params: Promise.resolve({ id: immTaskId }) });
+  assert.strictEqual(adhocRes.status, 200);
+  const adhocData = await adhocRes.json();
+  assert.strictEqual(adhocData.task.statusNotes.length, 2);
+  assert.strictEqual(adhocData.task.latestNote, 'Question for producer: Is 16:9 vertical 9:16 format also needed?');
+
+  // Mark completed with deliverable
+  const completeReq = new NextRequest(`http://localhost:3000/api/graphics/${immTaskId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -1743,15 +1782,17 @@ try {
     body: JSON.stringify({
       status: 'COMPLETED',
       deliverableUrl: 'https://dropbox.com/s/jns_quote_card_v1.mov',
+      statusNote: 'Final export delivered to Dropbox.',
     }),
   });
-  const patchRes = await patchGraphicItem(patchReq, { params: Promise.resolve({ id: immTaskId }) });
-  assert.strictEqual(patchRes.status, 200, 'Updating task status must succeed');
-  const patchData = await patchRes.json();
-  assert.strictEqual(patchData.task.status, 'COMPLETED');
-  assert.strictEqual(patchData.task.deliverableUrl, 'https://dropbox.com/s/jns_quote_card_v1.mov');
+  const completeRes = await patchGraphicItem(completeReq, { params: Promise.resolve({ id: immTaskId }) });
+  assert.strictEqual(completeRes.status, 200);
+  const completeData = await completeRes.json();
+  assert.strictEqual(completeData.task.status, 'COMPLETED');
+  assert.strictEqual(completeData.task.deliverableUrl, 'https://dropbox.com/s/jns_quote_card_v1.mov');
+  assert.strictEqual(completeData.task.statusNotes.length, 3);
 
-  // 4. Retrieve via GET /api/graphics
+  // 4. Retrieve via GET /api/graphics (Authorized user)
   const getReq = new NextRequest('http://localhost:3000/api/graphics', {
     method: 'GET',
     headers: { cookie: `jns_user_id=${producerUser.id}` },
@@ -1760,6 +1801,39 @@ try {
   assert.strictEqual(getRes.status, 200);
   const allGfx = await getRes.json();
   assert(allGfx.tasks.length >= 2, 'Retrieved tasks must include created tasks');
+
+  // 5. Visibility restrictions: Non-related user (Editor / Studio) cannot view or modify graphics tasks
+  assert.strictEqual(canAccessGraphics(adminUser), true, 'Admin can access graphics');
+  assert.strictEqual(canAccessGraphics(producerUser), true, 'Producer can access graphics');
+  assert.strictEqual(canAccessGraphics(editorUser), false, 'Video editor cannot access graphics');
+  assert.strictEqual(canAccessGraphics(studioUser), false, 'Studio operator cannot access graphics');
+
+  const editorGetReq = new NextRequest('http://localhost:3000/api/graphics', {
+    method: 'GET',
+    headers: { cookie: `jns_user_id=${editorUser.id}` },
+  });
+  const editorGetRes = await getGraphics(editorGetReq);
+  assert.strictEqual(editorGetRes.status, 200);
+  const editorGfx = await editorGetRes.json();
+  assert.deepStrictEqual(editorGfx.tasks, [], 'Non-related users (Editor) must receive empty graphics tasks');
+
+  const editorPostReq = new NextRequest('http://localhost:3000/api/graphics', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${editorUser.id}`,
+    },
+    body: JSON.stringify({ title: 'Unauthorized Task' }),
+  });
+  const editorPostRes = await postGraphics(editorPostReq);
+  assert.strictEqual(editorPostRes.status, 403, 'Non-related user must be forbidden from creating graphics tasks');
+
+  const editorItemReq = new NextRequest(`http://localhost:3000/api/graphics/${immTaskId}`, {
+    method: 'GET',
+    headers: { cookie: `jns_user_id=${editorUser.id}` },
+  });
+  const editorItemRes = await getGraphicItem(editorItemReq, { params: Promise.resolve({ id: immTaskId }) });
+  assert.strictEqual(editorItemRes.status, 403, 'Non-related user must be forbidden from accessing specific graphics task');
 
   console.log('✓ Test 27 Passed: Graphic Design Hub & Quick Action: Immediate requests & 8-stage long-term projects verified');
   testsPassed++;
@@ -2309,13 +2383,187 @@ try {
   console.error('✗ Test 32 Failed', err);
 }
 
+// Test 33: Immediate Graphics Request Stage-Based Progress (Start -> Submit for Review -> Producer Revisions -> Re-submit -> Approval & Archive)
+try {
+  // 1. Create an IMMEDIATE graphics request with assigned designer and producer
+  const createReq = new NextRequest('http://localhost:3000/api/graphics', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${adminUser.id}`,
+    },
+    body: JSON.stringify({
+      type: 'IMMEDIATE',
+      title: 'Breaking News Lower Third - Knesset Vote',
+      showId: 'show_the_quad_shows',
+      showName: 'The QUAD (Shows)',
+      timing: '02:15 - 02:45',
+      deadline: '2026-11-20T18:00',
+      priority: 'URGENT',
+      assignedUserId: 'usr_ilia_graphics',
+      assignedUserName: 'Ilia Molchanov',
+      producerId: producerUser.id,
+      producerName: producerUser.fullName || producerUser.name,
+      description: 'Lower third graphic for urgent Knesset election special report.',
+    }),
+  });
+
+  const createRes = await postGraphics(createReq);
+  assert.strictEqual(createRes.status, 201, 'Immediate graphics task creation must return 201');
+  const createData = await createRes.json();
+  const immTask = createData.task;
+  assert.strictEqual(immTask.type, 'IMMEDIATE');
+  assert.strictEqual(immTask.status, 'NOT_STARTED');
+  assert.strictEqual(immTask.isArchived, false);
+  const taskId = immTask.id;
+
+  // 2. Stage 1: Designer starts the task (NOT_STARTED -> IN_PROGRESS)
+  const startReq = new NextRequest(`http://localhost:3000/api/graphics/${taskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=usr_ilia_graphics`,
+    },
+    body: JSON.stringify({
+      status: 'IN_PROGRESS',
+      statusNote: 'Started building After Effects template for Knesset lower third.',
+    }),
+  });
+  const startRes = await patchGraphicItem(startReq, { params: Promise.resolve({ id: taskId }) });
+  assert.strictEqual(startRes.status, 200, 'Starting task must return 200');
+  const startData = await startRes.json();
+  assert.strictEqual(startData.task.status, 'IN_PROGRESS');
+
+  // 3. Stage 2: Designer submits for review (IN_PROGRESS -> READY_FOR_REVIEW / Awaiting Approval)
+  const submitReq = new NextRequest(`http://localhost:3000/api/graphics/${taskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=usr_ilia_graphics`,
+    },
+    body: JSON.stringify({
+      status: 'READY_FOR_REVIEW',
+      deliverableUrl: 'https://dropbox.com/s/knesset_lt_v1.mov',
+      statusNote: 'Delivered ProRes 4444 export with alpha channel for producer approval.',
+    }),
+  });
+  const submitRes = await patchGraphicItem(submitReq, { params: Promise.resolve({ id: taskId }) });
+  assert.strictEqual(submitRes.status, 200, 'Submitting for review must return 200');
+  const submitData = await submitRes.json();
+  assert.strictEqual(submitData.task.status, 'READY_FOR_REVIEW');
+  assert.strictEqual(submitData.task.deliverableUrl, 'https://dropbox.com/s/knesset_lt_v1.mov');
+  assert(submitData.task.reviewTask, 'reviewTask must be generated for producer');
+  assert.strictEqual(submitData.task.reviewTask.producerId, producerUser.id);
+  assert.strictEqual(submitData.task.reviewTask.status, 'PENDING');
+
+  // Verify notification was sent to assigned producer
+  db = getDb();
+  const producerNotif = db.notifications?.find(
+    (n) => n.userId === producerUser.id && n.title.includes('Graphics Review Required')
+  );
+  assert(producerNotif, 'Assigned producer must receive notification upon review submission');
+
+  // 4. Stage 3: Producer requests revisions with feedback note and additional placeholders
+  const revisionReq = new NextRequest(`http://localhost:3000/api/graphics/${taskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'REVISION_REQUIRED',
+      reviewNotes: 'Please change party affiliation font color from yellow to white and correct MK surname.',
+      additionalAssets: [
+        { title: 'Official Knesset Portrait', url: 'https://knesset.gov.il/mk/portrait.png' },
+      ],
+      additionalReferences: [
+        { title: 'Knesset Style Guide 2026', url: 'https://knesset.gov.il/style.pdf' },
+      ],
+    }),
+  });
+  const revisionRes = await patchGraphicItem(revisionReq, { params: Promise.resolve({ id: taskId }) });
+  assert.strictEqual(revisionRes.status, 200, 'Revision request must return 200');
+  const revisionData = await revisionRes.json();
+  assert.strictEqual(revisionData.task.status, 'REVISION_REQUIRED');
+  assert.strictEqual(
+    revisionData.task.reviewNotes,
+    'Please change party affiliation font color from yellow to white and correct MK surname.'
+  );
+  assert.strictEqual(revisionData.task.reviewTask.status, 'REVISION_REQUESTED');
+  // Check that additional assets and placeholders exist
+  assert(revisionData.task.assets.length >= 1, 'Assets must include producer-provided asset');
+  assert(revisionData.task.references.length >= 1, 'References must include producer-provided reference');
+  const hasAssetPlaceholder = revisionData.task.assets.some((a) => !a.url || a.title?.toLowerCase().includes('placeholder'));
+  const hasRefPlaceholder = revisionData.task.references.some((r) => !r.url || r.title?.toLowerCase().includes('placeholder'));
+  assert(hasAssetPlaceholder, 'Asset placeholder must be added for revisions');
+  assert(hasRefPlaceholder, 'Reference placeholder must be added for revisions');
+
+  // Verify notification was sent to designer
+  db = getDb();
+  const designerNotif = db.notifications?.find(
+    (n) => n.userId === 'usr_ilia_graphics' && n.title.includes('Revisions Requested')
+  );
+  assert(designerNotif, 'Designer must receive notification upon revision request');
+
+  // 5. Stage 4: Designer re-submits for review
+  const resubmitReq = new NextRequest(`http://localhost:3000/api/graphics/${taskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=usr_ilia_graphics`,
+    },
+    body: JSON.stringify({
+      status: 'READY_FOR_REVIEW',
+      deliverableUrl: 'https://dropbox.com/s/knesset_lt_v2_final.mov',
+      statusNote: 'Updated party affiliation color and corrected spelling.',
+    }),
+  });
+  const resubmitRes = await patchGraphicItem(resubmitReq, { params: Promise.resolve({ id: taskId }) });
+  assert.strictEqual(resubmitRes.status, 200);
+  const resubmitData = await resubmitRes.json();
+  assert.strictEqual(resubmitData.task.status, 'READY_FOR_REVIEW');
+  assert.strictEqual(resubmitData.task.reviewTask.status, 'PENDING');
+
+  // 6. Stage 5: Producer approves the task -> Completed, Archived, and Designer Notified
+  const approveReq = new NextRequest(`http://localhost:3000/api/graphics/${taskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `jns_user_id=${producerUser.id}`,
+    },
+    body: JSON.stringify({
+      action: 'APPROVE',
+      statusNote: 'Approved. Looks great for the live show broadcast!',
+    }),
+  });
+  const approveRes = await patchGraphicItem(approveReq, { params: Promise.resolve({ id: taskId }) });
+  assert.strictEqual(approveRes.status, 200, 'Approval must return 200');
+  const approveData = await approveRes.json();
+  assert.strictEqual(approveData.task.status, 'COMPLETED');
+  assert.strictEqual(approveData.task.isArchived, true, 'Task must be archived upon approval');
+  assert(approveData.task.archivedAt, 'archivedAt timestamp must be recorded');
+  assert.strictEqual(approveData.task.reviewTask.status, 'APPROVED');
+
+  // Verify approval notification sent to designer
+  db = getDb();
+  const approvalNotif = db.notifications?.find(
+    (n) => n.userId === 'usr_ilia_graphics' && n.title.includes('Approved & Archived')
+  );
+  assert(approvalNotif, 'Designer must receive notification upon producer approval');
+
+  console.log('✓ Test 33 Passed: Immediate Graphics Request Stage-Based Progress (Start -> Submit for Review -> Producer Revisions -> Re-submit -> Approval & Archive) verified');
+  testsPassed++;
+} catch (err) {
+  console.error('✗ Test 33 Failed', err);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${testsPassed} / 32 Critical Production & Workflow Tests PASSED!`);
+console.log(`RESULTS: ${testsPassed} / 33 Critical Production & Workflow Tests PASSED!`);
 console.log(`========================================\n`);
 
 // Reset clean demo seed data after test run
 resetToSeedData();
 
-if (testsPassed !== 32) {
+if (testsPassed !== 33) {
   process.exit(1);
 }

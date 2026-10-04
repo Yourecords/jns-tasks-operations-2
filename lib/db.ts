@@ -1990,8 +1990,10 @@ export const SEED_GRAPHIC_TASKS: GraphicDesignTask[] = [
     deadline: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().split('T')[0],
     priority: 'HIGH',
     status: 'IN_PROGRESS',
-    assignedUserId: 'usr_ilia_graphics',
-    assignedUserName: 'Ilia Molchanov',
+    assignedUserId: 'usr_zach_producer',
+    assignedUserName: 'Zach Sicherman',
+    producerId: 'usr_zach_producer',
+    producerName: 'Zach Sicherman',
     createdById: 'usr_yuri_admin',
     createdByName: 'Yuri Skvirski',
     subtasks: [
@@ -2171,6 +2173,16 @@ export function getDb(): DatabaseSchema {
     if (!parsed.graphicDesignTasks) {
       parsed.graphicDesignTasks = SEED_GRAPHIC_TASKS;
       mutated = true;
+    } else {
+      parsed.graphicDesignTasks.forEach((t) => {
+        if (t.type === 'LONG_TERM' && (!t.producerId || t.assignedUserId === 'usr_ilia_graphics')) {
+          t.producerId = 'usr_zach_producer';
+          t.producerName = 'Zach Sicherman';
+          t.assignedUserId = 'usr_zach_producer';
+          t.assignedUserName = 'Zach Sicherman';
+          mutated = true;
+        }
+      });
     }
     if (parsed.systemSettings && (parsed.systemSettings.productionEmailUrl === 'mailto:production@jns.org' || parsed.systemSettings.productionEmailUrl === 'https://gmail.com')) {
       parsed.systemSettings.productionEmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=production@jns.org';

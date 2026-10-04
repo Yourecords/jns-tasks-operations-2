@@ -598,6 +598,8 @@ export type GraphicTaskType = 'LONG_TERM' | 'IMMEDIATE';
 
 export type GraphicSubtaskStatus =
   | 'NOT_STARTED'
+  | 'STARTED'
+  | 'IN_PROGRESS'
   | 'CONCEPT'
   | 'DESIGN'
   | 'ANIMATION'
@@ -610,6 +612,10 @@ export interface GraphicSubtask {
   id: string;
   title: string;
   status: GraphicSubtaskStatus;
+  isMainTask?: boolean;
+  parentId?: string;
+  mainTaskTitle?: string;
+  subtasks?: GraphicSubtask[];
   assignedUserId?: string;
   notes?: string;
   timing?: string;
@@ -624,9 +630,11 @@ export type GraphicTaskStatus =
   | 'NOT_STARTED'
   | 'IN_PROGRESS'
   | 'READY_FOR_REVIEW'
+  | 'AWAITING_APPROVAL'
   | 'REVISION_REQUIRED'
   | 'COMPLETED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'ARCHIVED';
 
 export interface GraphicAssetLink {
   id: string;
@@ -638,6 +646,30 @@ export interface GraphicAssetLink {
   mediaId?: string;
   mime?: string;
   bytes?: number;
+}
+
+export interface GraphicStatusNote {
+  id: string;
+  fromStatus?: GraphicTaskStatus;
+  toStatus: GraphicTaskStatus;
+  note: string;
+  authorId: string;
+  authorName: string;
+  producerId?: string;
+  producerName?: string;
+  createdAt: string;
+}
+
+export interface GraphicProducerReviewTask {
+  id: string;
+  producerId: string;
+  producerName?: string;
+  status: 'PENDING' | 'APPROVED' | 'REVISION_REQUESTED';
+  submittedAt: string;
+  submittedByUserId?: string;
+  submittedByUserName?: string;
+  reviewedAt?: string;
+  reviewNotes?: string;
 }
 
 export interface GraphicDesignTask {
@@ -656,12 +688,20 @@ export interface GraphicDesignTask {
   status: GraphicTaskStatus;
   assignedUserId: string;
   assignedUserName?: string;
+  producerId?: string;
+  producerName?: string;
   createdById: string;
   createdByName?: string;
   subtasks: GraphicSubtask[];
   assets: GraphicAssetLink[];
   references: GraphicAssetLink[];
+  statusNotes?: GraphicStatusNote[];
+  latestNote?: string;
+  reviewTask?: GraphicProducerReviewTask;
+  reviewNotes?: string;
   deliverableUrl?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

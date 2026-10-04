@@ -32,10 +32,11 @@ import {
   Eye,
   Car,
   Palette,
+  MessageSquare,
 } from 'lucide-react';
 import { useUser } from './UserContext';
 import { useTheme } from './ThemeContext';
-import { isEligibleEditor, canManageTaxis } from '@/lib/utils';
+import { isEligibleEditor, canManageTaxis, canAccessGraphics } from '@/lib/utils';
 import UpdateScheduleModal from './UpdateScheduleModal';
 
 interface SidebarProps {
@@ -75,14 +76,16 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
         // ignore taxi badge fetch error
       }
 
-      try {
-        const gfxRes = await fetch('/api/graphics');
-        if (gfxRes.ok) {
-          const gfxData = await gfxRes.json();
-          activeGfxCount = (gfxData.tasks || []).filter((t: any) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length;
+      if (canAccessGraphics(currentUser)) {
+        try {
+          const gfxRes = await fetch('/api/graphics');
+          if (gfxRes.ok) {
+            const gfxData = await gfxRes.json();
+            activeGfxCount = (gfxData.tasks || []).filter((t: any) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length;
+          }
+        } catch (e) {
+          // ignore gfx badge fetch error
         }
-      } catch (e) {
-        // ignore gfx badge fetch error
       }
 
       if (data.productions) {
@@ -151,13 +154,17 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
     { label: 'Productions', href: '/productions', icon: Film },
     { label: 'Pilots', href: '/pilots', icon: Compass },
     { label: 'Studio Rentals', href: '/rentals', icon: Building2 },
-    {
-      label: 'Graphic Design',
-      href: '/graphics',
-      icon: Palette,
-      badge: badgeCounts.activeGraphics > 0 ? badgeCounts.activeGraphics : undefined,
-      badgeClass: 'nav-badge-gold',
-    },
+    ...(canAccessGraphics(currentUser)
+      ? [
+          {
+            label: 'Graphic Design',
+            href: '/graphics',
+            icon: Palette,
+            badge: badgeCounts.activeGraphics > 0 ? badgeCounts.activeGraphics : undefined,
+            badgeClass: 'nav-badge-gold',
+          },
+        ]
+      : []),
     { label: 'Production Calendar', href: '/calendar', icon: Calendar },
     ...(canManageTaxis(currentUser)
       ? [
@@ -289,6 +296,40 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>↗</span>
           </a>
         )}
+
+        <button
+          type="button"
+          className="nav-link"
+          style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer' }}
+          onClick={() => {
+            setMobileOpen(false);
+            window.dispatchEvent(new CustomEvent('open-messaging-dock', { detail: { tab: 'TEAM' } }));
+          }}
+          title="Open JNS Team Chat Comms"
+        >
+          <div className="nav-link-left">
+            <MessageSquare size={18} color="var(--jns-gold)" />
+            <span>Team Chat</span>
+          </div>
+          <span style={{ fontSize: '10.5px', color: 'var(--jns-gold)', fontWeight: 700 }}>Open 💬</span>
+        </button>
+
+        <button
+          type="button"
+          className="nav-link"
+          style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer' }}
+          onClick={() => {
+            setMobileOpen(false);
+            window.dispatchEvent(new CustomEvent('open-messaging-dock', { detail: { tab: 'AI' } }));
+          }}
+          title="Open JNS Production AI Assistant"
+        >
+          <div className="nav-link-left">
+            <Sparkles size={18} color="#38bdf8" />
+            <span>AI Assistant</span>
+          </div>
+          <span style={{ fontSize: '10.5px', color: '#38bdf8', fontWeight: 700 }}>AI ✨</span>
+        </button>
 
         {/* Studio Gear Log (Restricted to Yuri & Ahron Only) */}
         {(currentUser?.role === 'ADMIN' ||

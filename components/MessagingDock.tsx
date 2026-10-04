@@ -30,8 +30,22 @@ export default function MessagingDock() {
 
   // Dock States
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'TEAM' | 'DIRECT'>('TEAM');
+  const [activeTab, setActiveTab] = useState<'TEAM' | 'DIRECT' | 'AI'>('TEAM');
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
+
+  // AI Assistant States
+  const [aiMessages, setAiMessages] = useState<
+    { id: string; sender: 'user' | 'assistant'; text: string; time: string; actionLink?: string; actionLabel?: string }[]
+  >([
+    {
+      id: 'ai_welcome',
+      sender: 'assistant',
+      text: "Hello! I'm your JNS Production AI Assistant. How can I help you today? You can ask about filming schedules, graphics requests, producer review queues, or show formats.",
+      time: 'Just now',
+    },
+  ]);
+  const [aiInputText, setAiInputText] = useState('');
+  const [aiThinking, setAiThinking] = useState(false);
 
   // Message Data
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -246,6 +260,124 @@ export default function MessagingDock() {
     }
   };
 
+  // Event listener for opening messaging dock from menu or external components
+  useEffect(() => {
+    const handleOpenDock = (e: any) => {
+      setIsOpen(true);
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+      if (e.detail?.recipientId) {
+        setSelectedRecipientId(e.detail.recipientId);
+        setActiveTab('DIRECT');
+      }
+    };
+    window.addEventListener('open-messaging-dock', handleOpenDock);
+    return () => window.removeEventListener('open-messaging-dock', handleOpenDock);
+  }, []);
+
+  // AI Assistant Query Handler
+  const handleSendAiMessage = async (queryText?: string) => {
+    const textToSend = (queryText || aiInputText).trim();
+    if (!textToSend || aiThinking) return;
+
+    const userMsg = {
+      id: `usr_${Date.now()}`,
+      sender: 'user' as const,
+      text: textToSend,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setAiMessages((prev) => [...prev, userMsg]);
+    if (!queryText) setAiInputText('');
+    setAiThinking(true);
+
+    try {
+      const q = textToSend.toLowerCase();
+      let replyText = '';
+      let actionLink = '';
+      let actionLabel = '';
+
+      if (q.includes('film') || q.includes('schedule') || q.includes('today') || q.includes('shoot')) {
+        const res = await fetch('/api/productions');
+        const data = await res.json();
+        const prods = (data.productions || []).filter((p: any) => p.status === 'ACTIVE');
+        if (prods.length > 0) {
+          const list = prods.slice(0, 5).map((p: any) => `• ${p.showName || p.title} (Ep #${p.episodeNumber || '1'}): Filming on ${p.filmingDate || 'TBD'} ${p.filmingTime ? `at ${p.filmingTime}` : ''} [${p.location || 'Studio'}]`).join('\n');
+          replyText = `Here is the current filming schedule:\n\n${list}\n\nAll shoots are coordinated in the studio calendar.`;
+          actionLink = '/calendar';
+          actionLabel = 'Open Production Calendar →';
+        } else {
+          replyText = 'No active filming sessions are currently scheduled for today. All studio slots are open.';
+          actionLink = '/calendar';
+          actionLabel = 'View Calendar →';
+        }
+      } else if (q.includes('graphic') || q.includes('gfx') || q.includes('mogrt') || q.includes('logo')) {
+        const res = await fetch('/api/graphics');
+        if (res.ok) {
+          const data = await res.json();
+          const activeGfx = (data.tasks || []).filter((t: any) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED');
+          if (activeGfx.length > 0) {
+            const list = activeGfx.slice(0, 5).map((t: any) => `• ${t.title || t.projectName}: ${t.status === 'READY_FOR_REVIEW' ? 'Awaiting Approval' : t.status.replace(/_/g, ' ')} (${t.type === 'IMMEDIATE' ? 'Immediate' : 'Project'})`).join('\n');
+            replyText = `Found ${activeGfx.length} active graphic design tasks in pipeline:\n\n${list}`;
+            actionLink = '/graphics';
+            actionLabel = 'Go to Graphics Hub →';
+          } else {
+            replyText = 'All graphic design tasks and immediate requests are currently up to date!';
+            actionLink = '/graphics';
+            actionLabel = 'Open Graphics Hub →';
+          }
+        }
+      } else if (q.includes('review') || q.includes('approval') || q.includes('waiting') || q.includes('approve')) {
+        const res = await fetch('/api/graphics');
+        let waitingGfxCount = 0;
+        if (res.ok) {
+          const data = await res.json();
+          waitingGfxCount = (data.tasks || []).filter((t: any) => t.status === 'READY_FOR_REVIEW').length;
+        }
+        replyText = `There are currently ${waitingGfxCount} graphics submission(s) awaiting producer review and approval. Producers can inspect deliverables and either approve & archive or request revisions with additional placeholders.`;
+        actionLink = '/my-tasks';
+        actionLabel = 'Review in My Tasks →';
+      } else if (q.includes('taxi') || q.includes('gett') || q.includes('ride') || q.includes('transport')) {
+        replyText = 'JNS Corporate Taxi dispatch is powered by Gett Business Israel. Producers and Admins can book guest rides, track status in real time, and link rides to show episodes.';
+        actionLink = '/taxis';
+        actionLabel = 'Open Gett Taxi Dispatch →';
+      } else if (q.includes('task') || q.includes('my task') || q.includes('deadline')) {
+        replyText = 'You can track all your assigned video editing, studio operations, and graphic design tasks in the My Tasks operational view.';
+        actionLink = '/my-tasks';
+        actionLabel = 'Open My Tasks →';
+      } else {
+        replyText = `Understood. JNS Video Production operations cover Shows & Episodes, Filming Calendar, Graphics Hub, Guest Taxis, and Gear Requisitions. You can ask me anytime to summarize schedules, check graphics status, or locate review queues.`;
+        actionLink = '/';
+        actionLabel = 'View Dashboard →';
+      }
+
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: `ai_${Date.now()}`,
+          sender: 'assistant',
+          text: replyText,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          actionLink,
+          actionLabel,
+        },
+      ]);
+    } catch {
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: `ai_${Date.now()}`,
+          sender: 'assistant',
+          text: 'I encountered an error querying the operations database. Please try again in a moment.',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+    } finally {
+      setAiThinking(false);
+    }
+  };
+
   if (!currentUser) return null;
 
   // Selected recipient user object
@@ -264,98 +396,76 @@ export default function MessagingDock() {
 
   return (
     <aside
-      aria-label="JNS Team Chat Floating Dock"
-      style={{
-        position: 'fixed',
-        bottom: '22px',
-        right: '24px',
-        zIndex: 999,
-        fontFamily: 'inherit',
-      }}
+      aria-label="JNS Team Comms & AI Assistant Floating Dock"
+      className="floating-messaging-dock"
     >
-      {/* COLLAPSED FLOATING PILL BUTTON */}
+      {/* COLLAPSED FLOATING SHORTCUTS */}
       {!isOpen && (
-        <button
-          type="button"
-          onClick={() => {
-            setIsOpen(true);
-            setTimeout(() => inputRef.current?.focus(), 150);
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 18px',
-            borderRadius: '30px',
-            background: isLight ? '#ffffff' : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            border: '1.5px solid var(--jns-gold)',
-            color: 'var(--text-main)',
-            boxShadow: isLight
-              ? '0 6px 20px rgba(0, 0, 0, 0.12), 0 0 10px rgba(201, 138, 36, 0.2)'
-              : '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 160, 23, 0.25)',
-            cursor: 'pointer',
-            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            fontSize: '13px',
-            fontWeight: 700,
-          }}
-          title="Open JNS Team Comms"
-        >
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <MessageSquare size={17} color="var(--jns-gold)" />
-            <span
-              style={{
-                position: 'absolute',
-                top: '-2px',
-                right: '-3px',
-                width: '7px',
-                height: '7px',
-                borderRadius: '50%',
-                background: '#22c55e',
-                border: isLight ? '1px solid #ffffff' : '1px solid #0f172a',
-              }}
-            />
-          </div>
-          <span>Team Chat</span>
+        <div className="floating-dock-shortcuts-group">
+          {/* Team Chat Shortcut */}
+          <button
+            type="button"
+            className="floating-dock-pill-btn"
+            onClick={() => {
+              setActiveTab('TEAM');
+              setIsOpen(true);
+              setTimeout(() => inputRef.current?.focus(), 150);
+            }}
+            title="Open JNS Team Chat"
+          >
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <MessageSquare size={16} color="var(--jns-gold)" />
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '-2px',
+                  right: '-3px',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: '#22c55e',
+                  border: isLight ? '1px solid #ffffff' : '1px solid #0f172a',
+                }}
+              />
+            </div>
+            <span className="dock-label-text">Team Chat</span>
 
-          {totalUnreadCount > 0 && (
-            <span
-              style={{
-                background: 'var(--jns-gold)',
-                color: '#000',
-                padding: '2px 7px',
-                borderRadius: '10px',
-                fontSize: '11px',
-                fontWeight: 900,
-                boxShadow: '0 0 8px rgba(212, 160, 23, 0.6)',
-              }}
-            >
-              {totalUnreadCount}
-            </span>
-          )}
-        </button>
+            {totalUnreadCount > 0 && (
+              <span
+                style={{
+                  background: 'var(--jns-gold)',
+                  color: '#000',
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  fontSize: '10.5px',
+                  fontWeight: 900,
+                  boxShadow: '0 0 8px rgba(212, 160, 23, 0.6)',
+                }}
+              >
+                {totalUnreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* AI Assistant Shortcut */}
+          <button
+            type="button"
+            className="floating-dock-pill-btn floating-dock-pill-ai"
+            onClick={() => {
+              setActiveTab('AI');
+              setIsOpen(true);
+            }}
+            title="Open JNS AI Production Assistant"
+          >
+            <Sparkles size={15} color="#38bdf8" />
+            <span className="dock-label-text">AI Assistant</span>
+          </button>
+        </div>
       )}
 
-      {/* EXPANDED FLOATING CHAT WINDOW */}
+      {/* EXPANDED FLOATING CHAT & AI WINDOW */}
       {isOpen && (
-        <div
-          style={{
-            width: '380px',
-            maxWidth: '94vw',
-            height: '520px',
-            maxHeight: '82vh',
-            borderRadius: '14px',
-            background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.96)',
-            backdropFilter: 'blur(16px)',
-            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(212, 160, 23, 0.35)',
-            boxShadow: isLight
-              ? '0 16px 40px rgba(0, 0, 0, 0.15), 0 0 20px rgba(201, 138, 36, 0.12)'
-              : '0 16px 40px rgba(0, 0, 0, 0.65), 0 0 20px rgba(212, 160, 23, 0.15)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            animation: 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
+        <div className="floating-dock-window">
           {/* TOP HEADER */}
           <div
             style={{
@@ -375,12 +485,12 @@ export default function MessagingDock() {
                   width: '8px',
                   height: '8px',
                   borderRadius: '50%',
-                  background: '#22c55e',
-                  boxShadow: '0 0 6px #22c55e',
+                  background: activeTab === 'AI' ? '#38bdf8' : '#22c55e',
+                  boxShadow: activeTab === 'AI' ? '0 0 6px #38bdf8' : '0 0 6px #22c55e',
                 }}
               />
               <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
-                JNS Team Comms
+                {activeTab === 'AI' ? 'JNS Production AI Assistant' : 'JNS Team Comms'}
               </span>
             </div>
 
@@ -422,14 +532,14 @@ export default function MessagingDock() {
             </div>
           </div>
 
-          {/* CHANNEL TABS: TEAM vs PRIVATE DMS */}
+          {/* CHANNEL TABS: TEAM vs PRIVATE DMS vs AI ASSISTANT */}
           <div
             style={{
               display: 'flex',
               background: isLight ? '#f1f5f9' : 'rgba(15, 23, 42, 0.6)',
-              padding: '4px 8px',
+              padding: '4px 6px',
               borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)',
-              gap: '6px',
+              gap: '4px',
             }}
           >
             <button
@@ -439,7 +549,7 @@ export default function MessagingDock() {
               }}
               style={{
                 flex: 1,
-                padding: '6px 8px',
+                padding: '6px 6px',
                 borderRadius: '6px',
                 border: isLight ? (activeTab === 'TEAM' ? '1px solid #e2e8f0' : '1px solid transparent') : 'none',
                 background: activeTab === 'TEAM'
@@ -448,25 +558,25 @@ export default function MessagingDock() {
                 color: activeTab === 'TEAM' ? 'var(--jns-gold)' : 'var(--text-secondary)',
                 boxShadow: activeTab === 'TEAM' && isLight ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 fontWeight: activeTab === 'TEAM' ? 800 : 600,
-                fontSize: '11.5px',
+                fontSize: '11px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '5px',
+                gap: '4px',
                 transition: 'all 0.15s ease',
               }}
             >
-              <Users size={13} />
-              <span># General Team</span>
+              <Users size={12} />
+              <span>Team Chat</span>
               {teamUnreadCount > 0 && (
                 <span
                   style={{
                     background: 'var(--jns-gold)',
                     color: '#000',
-                    fontSize: '9.5px',
+                    fontSize: '9px',
                     fontWeight: 900,
-                    padding: '1px 5px',
+                    padding: '1px 4px',
                     borderRadius: '8px',
                   }}
                 >
@@ -482,7 +592,7 @@ export default function MessagingDock() {
               }}
               style={{
                 flex: 1,
-                padding: '6px 8px',
+                padding: '6px 6px',
                 borderRadius: '6px',
                 border: isLight ? (activeTab === 'DIRECT' ? '1px solid #e2e8f0' : '1px solid transparent') : 'none',
                 background: activeTab === 'DIRECT'
@@ -491,31 +601,60 @@ export default function MessagingDock() {
                 color: activeTab === 'DIRECT' ? 'var(--jns-gold)' : 'var(--text-secondary)',
                 boxShadow: activeTab === 'DIRECT' && isLight ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 fontWeight: activeTab === 'DIRECT' ? 800 : 600,
-                fontSize: '11.5px',
+                fontSize: '11px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '5px',
+                gap: '4px',
                 transition: 'all 0.15s ease',
               }}
             >
-              <User size={13} />
-              <span>Direct Messages</span>
+              <User size={12} />
+              <span>Direct DMs</span>
               {totalDmUnread > 0 && (
                 <span
                   style={{
                     background: '#e879f9',
                     color: '#000',
-                    fontSize: '9.5px',
+                    fontSize: '9px',
                     fontWeight: 900,
-                    padding: '1px 5px',
+                    padding: '1px 4px',
                     borderRadius: '8px',
                   }}
                 >
                   {totalDmUnread}
                 </span>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('AI');
+              }}
+              style={{
+                flex: 1,
+                padding: '6px 6px',
+                borderRadius: '6px',
+                border: isLight ? (activeTab === 'AI' ? '1px solid #e2e8f0' : '1px solid transparent') : 'none',
+                background: activeTab === 'AI'
+                  ? (isLight ? '#ffffff' : 'rgba(56, 189, 248, 0.18)')
+                  : 'transparent',
+                color: activeTab === 'AI' ? '#38bdf8' : 'var(--text-secondary)',
+                boxShadow: activeTab === 'AI' && isLight ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                fontWeight: activeTab === 'AI' ? 800 : 600,
+                fontSize: '11px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Sparkles size={12} color={activeTab === 'AI' ? '#38bdf8' : 'inherit'} />
+              <span>AI Assistant</span>
             </button>
           </div>
 
@@ -1108,6 +1247,167 @@ export default function MessagingDock() {
                   </button>
                 </form>
               </>
+            )}
+
+            {/* VIEW 3: AI ASSISTANT VIEW */}
+            {activeTab === 'AI' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: isLight ? '#f8fafc' : 'transparent' }}>
+                {/* AI messages list */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {aiMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px', paddingLeft: '4px' }}>
+                        {msg.sender === 'assistant' ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Sparkles size={11} color="#38bdf8" />
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8' }}>JNS AI Assistant</span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)' }}>You</span>
+                        )}
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{msg.time}</span>
+                      </div>
+                      <div
+                        style={{
+                          maxWidth: '88%',
+                          padding: '9px 12px',
+                          borderRadius: msg.sender === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                          background: msg.sender === 'user'
+                            ? (isLight ? '#0284c7' : '#0369a1')
+                            : (isLight ? '#ffffff' : 'rgba(30, 41, 59, 0.8)'),
+                          color: msg.sender === 'user' ? '#ffffff' : 'var(--text-main)',
+                          fontSize: '12.5px',
+                          lineHeight: '1.45',
+                          border: msg.sender === 'user' ? 'none' : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(56, 189, 248, 0.2)'),
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {msg.text}
+
+                        {msg.actionLink && (
+                          <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)' }}>
+                            <Link
+                              href={msg.actionLink}
+                              onClick={() => setIsOpen(false)}
+                              style={{
+                                color: '#38bdf8',
+                                fontWeight: 700,
+                                fontSize: '11.5px',
+                                textDecoration: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <span>{msg.actionLabel || 'View details →'}</span>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {aiThinking && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', color: '#38bdf8', fontSize: '11.5px' }}>
+                      <div style={{ width: '12px', height: '12px', border: '2px solid #38bdf8', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      <span>Checking operations database...</span>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* AI quick suggestions */}
+                <div style={{ padding: '6px 10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', gap: '6px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                  {[
+                    { label: "🎬 Filming schedule", query: "What's filming today?" },
+                    { label: '🎨 Active graphics', query: 'Active graphics requests' },
+                    { label: '⏱ Review queue', query: 'Pending review approvals' },
+                    { label: '🚕 Gett taxi dispatch', query: 'Gett taxi booking help' },
+                  ].map((sug) => (
+                    <button
+                      key={sug.query}
+                      type="button"
+                      onClick={() => handleSendAiMessage(sug.query)}
+                      disabled={aiThinking}
+                      style={{
+                        padding: '4px 9px',
+                        borderRadius: '16px',
+                        background: isLight ? '#f1f5f9' : 'rgba(56, 189, 248, 0.1)',
+                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(56, 189, 248, 0.25)',
+                        color: isLight ? '#0369a1' : '#38bdf8',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {sug.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* AI Input Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendAiMessage();
+                  }}
+                  style={{
+                    padding: '8px 10px',
+                    borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    gap: '6px',
+                    alignItems: 'center',
+                    background: isLight ? '#ffffff' : '#0f172a',
+                  }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Ask AI Assistant about production, schedules, gear..."
+                    value={aiInputText}
+                    onChange={(e) => setAiInputText(e.target.value)}
+                    disabled={aiThinking}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)',
+                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.6)',
+                      color: 'var(--text-main)',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!aiInputText.trim() || aiThinking}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: '#38bdf8',
+                      color: '#000',
+                      border: 'none',
+                      cursor: aiInputText.trim() && !aiThinking ? 'pointer' : 'default',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: aiInputText.trim() && !aiThinking ? 1 : 0.5,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Send size={14} />
+                  </button>
+                </form>
+              </div>
             )}
           </div>
         </div>
