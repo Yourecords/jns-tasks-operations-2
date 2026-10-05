@@ -303,6 +303,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
           style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer' }}
           onClick={() => {
             setMobileOpen(false);
+            window.dispatchEvent(new CustomEvent('close-ai-assistant'));
             window.dispatchEvent(new CustomEvent('open-messaging-dock', { detail: { tab: 'TEAM' } }));
           }}
           title="Open JNS Team Chat Comms"
@@ -320,7 +321,8 @@ export default function Sidebar({ mobileOpen, setMobileOpen, onOpenViewAs }: Sid
           style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer' }}
           onClick={() => {
             setMobileOpen(false);
-            window.dispatchEvent(new CustomEvent('open-messaging-dock', { detail: { tab: 'AI' } }));
+            window.dispatchEvent(new CustomEvent('close-messaging-dock'));
+            window.dispatchEvent(new CustomEvent('open-ai-assistant'));
           }}
           title="Open JNS Production AI Assistant"
         >

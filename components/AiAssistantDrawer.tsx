@@ -210,6 +210,32 @@ export default function AiAssistantDrawer() {
     }
   }, [messages, isOpen, loading]);
 
+  // Listen for open/close events from undocked shortcuts and sidebar
+  useEffect(() => {
+    const handleOpen = () => {
+      setIsOpen(true);
+      window.dispatchEvent(new CustomEvent('close-messaging-dock'));
+      setTimeout(() => inputRef.current?.focus(), 150);
+    };
+
+    const handleClose = () => {
+      setIsOpen(false);
+    };
+
+    window.addEventListener('open-ai-assistant', handleOpen);
+    window.addEventListener('close-ai-assistant', handleClose);
+
+    return () => {
+      window.removeEventListener('open-ai-assistant', handleOpen);
+      window.removeEventListener('close-ai-assistant', handleClose);
+    };
+  }, []);
+
+  // Broadcast assistant drawer state to sync shortcut visibility
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('ai-assistant-state', { detail: { isOpen } }));
+  }, [isOpen]);
+
   const clearChat = () => {
     const welcome = createWelcomeMessage(currentUser);
     setMessages([welcome]);
@@ -276,78 +302,18 @@ export default function AiAssistantDrawer() {
     }
   };
 
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <aside
       aria-label="JNS AI Assistant"
-      style={{
-        position: 'fixed',
-        bottom: '22px',
-        right: '185px',
-        zIndex: 998,
-        fontFamily: 'inherit',
-      }}
+      className="floating-ai-drawer"
     >
-      {/* COLLAPSED FLOATING PILL BUTTON */}
-      {!isOpen && (
-        <button
-          type="button"
-          onClick={() => {
-            setIsOpen(true);
-            setTimeout(() => inputRef.current?.focus(), 150);
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            borderRadius: '30px',
-            background: isLight
-              ? '#ffffff'
-              : 'linear-gradient(135deg, rgba(20, 32, 54, 0.95) 0%, rgba(10, 16, 28, 0.98) 100%)',
-            border: '1.5px solid rgba(229, 169, 60, 0.85)',
-            color: 'var(--text-main, #f8fafc)',
-            boxShadow: isLight
-              ? '0 6px 20px rgba(0, 0, 0, 0.12), 0 0 12px rgba(229, 169, 60, 0.25)'
-              : '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(229, 169, 60, 0.3)',
-            cursor: 'pointer',
-            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            fontSize: '13px',
-            fontWeight: 700,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow =
-              '0 12px 28px rgba(0, 0, 0, 0.6), 0 0 20px rgba(229, 169, 60, 0.45)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'none';
-            e.currentTarget.style.boxShadow =
-              '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(229, 169, 60, 0.3)';
-          }}
-          title="Ask JNS AI Assistant"
-        >
-          <div
-            style={{
-              width: '22px',
-              height: '22px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(229, 169, 60, 0.18)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--jns-gold, #e5a93c)',
-            }}
-          >
-            <Sparkles size={14} />
-          </div>
-          <span>AI Assistant</span>
-        </button>
-      )}
-
-      {/* EXPANDED FLOATING ASSISTANT DRAWER */}
-      {isOpen && (
-        <div
-          style={{
+      <div
+        className="floating-ai-window"
+        style={{
             width: '390px',
             maxWidth: '92vw',
             height: '540px',
@@ -669,7 +635,6 @@ export default function AiAssistantDrawer() {
             </form>
           </div>
         </div>
-      )}
-    </aside>
-  );
-}
+      </aside>
+    );
+  }

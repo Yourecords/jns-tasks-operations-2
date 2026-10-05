@@ -30,6 +30,7 @@ export default function MessagingDock() {
 
   // Dock States
   const [isOpen, setIsOpen] = useState(false);
+  const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'TEAM' | 'DIRECT' | 'AI'>('TEAM');
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
 
@@ -263,6 +264,7 @@ export default function MessagingDock() {
   // Event listener for opening messaging dock from menu or external components
   useEffect(() => {
     const handleOpenDock = (e: any) => {
+      window.dispatchEvent(new CustomEvent('close-ai-assistant'));
       setIsOpen(true);
       if (e.detail?.tab) {
         setActiveTab(e.detail.tab);
@@ -272,8 +274,24 @@ export default function MessagingDock() {
         setActiveTab('DIRECT');
       }
     };
+
+    const handleCloseDock = () => {
+      setIsOpen(false);
+    };
+
+    const handleAiState = (e: any) => {
+      setIsAiDrawerOpen(Boolean(e.detail?.isOpen));
+    };
+
     window.addEventListener('open-messaging-dock', handleOpenDock);
-    return () => window.removeEventListener('open-messaging-dock', handleOpenDock);
+    window.addEventListener('close-messaging-dock', handleCloseDock);
+    window.addEventListener('ai-assistant-state', handleAiState);
+
+    return () => {
+      window.removeEventListener('open-messaging-dock', handleOpenDock);
+      window.removeEventListener('close-messaging-dock', handleCloseDock);
+      window.removeEventListener('ai-assistant-state', handleAiState);
+    };
   }, []);
 
   // AI Assistant Query Handler
@@ -400,13 +418,14 @@ export default function MessagingDock() {
       className="floating-messaging-dock"
     >
       {/* COLLAPSED FLOATING SHORTCUTS */}
-      {!isOpen && (
+      {!isOpen && !isAiDrawerOpen && (
         <div className="floating-dock-shortcuts-group">
           {/* Team Chat Shortcut */}
           <button
             type="button"
             className="floating-dock-pill-btn"
             onClick={() => {
+              window.dispatchEvent(new CustomEvent('close-ai-assistant'));
               setActiveTab('TEAM');
               setIsOpen(true);
               setTimeout(() => inputRef.current?.focus(), 150);
@@ -452,8 +471,8 @@ export default function MessagingDock() {
             type="button"
             className="floating-dock-pill-btn floating-dock-pill-ai"
             onClick={() => {
-              setActiveTab('AI');
-              setIsOpen(true);
+              setIsOpen(false);
+              window.dispatchEvent(new CustomEvent('open-ai-assistant'));
             }}
             title="Open JNS AI Production Assistant"
           >
@@ -631,7 +650,8 @@ export default function MessagingDock() {
             <button
               type="button"
               onClick={() => {
-                setActiveTab('AI');
+                setIsOpen(false);
+                window.dispatchEvent(new CustomEvent('open-ai-assistant'));
               }}
               style={{
                 flex: 1,
